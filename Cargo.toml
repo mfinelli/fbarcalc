@@ -19,3 +19,4 @@ clap = { version = "4.5.18", features = ["derive"] }
 dirs = { version = "5.0.1" }
 inquire = { version = "0.7.5" }
 ordered-float = { version = "4.2.2" }
+toml_edit = { version = "0.22.22" }
