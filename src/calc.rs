@@ -20,8 +20,20 @@ use std::error::Error;
 use inquire::{CustomType, InquireError};
 use inquire::ui::RenderConfig;
 use ordered_float::NotNan;
+use crate::config;
 
-pub fn calculate(mut start: f64) -> f64 {
+pub fn calculate(conf: config::Config) -> f64 {
+    // let def_currency = match conf.default_input_currency {
+    //     None => None,
+    //     Some(c) => {
+    //         let a = c.clone();
+    //         Some(a.as_str())
+    //     },
+    // };
+
+    // let currency = config::select_input_currency(def_currency, false).unwrap();
+
+    let mut start = 0.0;
     // let amount: Result<f64, InquireError> = CustomType::new("T:").with_formatter(&|i: f64| format!("{}{:.2}", "$", i)).prompt();
     // println!("{:?}", amount);
     let mut heap = BinaryHeap::new();

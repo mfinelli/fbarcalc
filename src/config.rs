@@ -33,15 +33,15 @@ const CONFIG_DEFAULT_INPUT_CURRENCY: &str = "default_input_currency";
 
 #[derive(Clone, Debug)]
 pub struct Currency<'a> {
-    code: &'a str,
-    name: &'a str,
-    symbol: &'a str,
+    pub code: &'a str,
+    pub name: &'a str,
+    pub symbol: &'a str,
 }
 
 #[derive(Clone, Debug)]
-pub struct Config<'a> {
-    pub version: u8,
-    pub default_input_currency: Option<&'a str>,
+pub struct Config {
+    pub version: i64,
+    pub default_input_currency: Option<String>,
 }
 
 /// Returns a vector of the currencies that we're currently supporting.
@@ -82,6 +82,34 @@ pub fn get_config_file(cli_config: Option<PathBuf>) -> PathBuf {
     }
 }
 
+pub fn get_config(config: Option<PathBuf>) -> Config {
+    let config_file = get_config_file(config);
+    match config_file.try_exists() {
+        Ok(e) => if e {
+            let toml = std::fs::read_to_string(&config_file).unwrap();
+            let doc = toml.parse::<DocumentMut>().unwrap();
+
+            let v = match doc.get("version") {
+                None => CONFIG_VERSION,
+                Some(i) => i.as_integer().unwrap(),
+            };
+
+            let c = match doc.get(CONFIG_DEFAULT_INPUT_CURRENCY) {
+                None => None,
+                Some(s) => Some(s.as_str().unwrap().to_string()),
+            };
+
+            Config {
+                version: v,
+                default_input_currency: c,
+            }
+        } else {
+            panic!("config file doesn't exist yet..."); // TODO: do better
+        },
+        Err(_) => panic!("there was an error checking the config file"), // TODO: do better
+    }
+}
+
 fn create_config_directory(config_file: &PathBuf) -> Result<(), std::io::Error> {
     let p = config_file.parent().unwrap();
     if p == Path::new("") || p == Path::new(".") || p == Path::new("..") {
@@ -98,7 +126,7 @@ fn create_config_directory(config_file: &PathBuf) -> Result<(), std::io::Error> 
     }
 }
 
-pub fn select_input_currency(default: Option<&str>) -> Result<Currency, Box<dyn Error>> {
+pub fn select_input_currency(default: Option<&str>, is_default: bool) -> Result<Currency, Box<dyn Error>> {
     let options = supported_currencies().iter().map(|c| c.name).collect::<Vec<_>>();
     let start = match default {
         // TODO: handle one that we don't have configured
@@ -106,7 +134,13 @@ pub fn select_input_currency(default: Option<&str>) -> Result<Currency, Box<dyn 
         None => 0,
     };
 
-    let ans = Select::new("What is the default input currency?",options).with_starting_cursor(start).prompt();
+    let p = if is_default {
+        "What is the default input currency?"
+    } else {
+        "What is the input currency?"
+    };
+
+    let ans = Select::new(p, options).with_starting_cursor(start).prompt();
     match ans {
         Ok(choice) => Ok(supported_currencies().iter().find(|c| c.name == choice).unwrap().clone()),
         Err(e) => panic!("{}", e), // TODO: do better
@@ -133,8 +167,8 @@ pub fn configure(config: Option<PathBuf>) -> ExitCode {
     let doc = toml.parse::<DocumentMut>().unwrap();
 
     let c = match doc.get(CONFIG_DEFAULT_INPUT_CURRENCY) {
-        None => select_input_currency(None).unwrap(),
-        Some(s) => select_input_currency(s.as_str()).unwrap(),
+        None => select_input_currency(None, true).unwrap(),
+        Some(s) => select_input_currency(s.as_str(), true).unwrap(),
     };
 
     new_doc["version"] = toml_edit::value(CONFIG_VERSION);
