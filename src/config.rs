@@ -23,6 +23,9 @@ use std::path::PathBuf;
 use std::path::Path;
 use toml_edit::DocumentMut;
 use std::process::ExitCode;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 
 const CONFIG_VERSION: i64 = 1;
 
@@ -79,7 +82,7 @@ pub fn get_config_file(cli_config: Option<PathBuf>) -> PathBuf {
     }
 }
 
-fn create_config_directory(config_file: PathBuf) -> Result<(), std::io::Error> {
+fn create_config_directory(config_file: &PathBuf) -> Result<(), std::io::Error> {
     let p = config_file.parent().unwrap();
     if p == Path::new("") || p == Path::new(".") || p == Path::new("..") {
         return Ok(());
@@ -94,18 +97,6 @@ fn create_config_directory(config_file: PathBuf) -> Result<(), std::io::Error> {
         }
     }
 }
-
-/// A function that we can use in other routines to make sure that we've
-/// written a config file first. Different from what we use in the config
-/// module because here we don't want to error if it doesn't exist... we're
-/// going to write it out now!
-// pub fn check_if_config_exists(config_file: PathBuf) -> Result<bool, Box<dyn Error>> {
-//     let result = config_file.try_exists();
-//     if result.is_err() {
-//         return Err(
-
-//     Ok(false)
-// }
 
 pub fn select_input_currency(default: Option<&str>) -> Result<Currency, Box<dyn Error>> {
     let options = supported_currencies().iter().map(|c| c.name).collect::<Vec<_>>();
@@ -141,59 +132,18 @@ pub fn configure(config: Option<PathBuf>) -> ExitCode {
     let mut new_doc = toml.parse::<DocumentMut>().unwrap();
     let doc = toml.parse::<DocumentMut>().unwrap();
 
-    // let mut doc = if config_exists {
-    //     let toml = std::fs::read_to_string(&config_file).unwrap();
-    //     toml.parse::<DocumentMut>().unwrap()
-    // } else {
-    //     "".parse::<DocumentMut>().unwrap()
-    // };
-    // let c: Currency;
-
     let c = match doc.get(CONFIG_DEFAULT_INPUT_CURRENCY) {
         None => select_input_currency(None).unwrap(),
         Some(s) => select_input_currency(s.as_str()).unwrap(),
     };
 
-    // println!("{:?}", c);
-
     new_doc["version"] = toml_edit::value(CONFIG_VERSION);
     new_doc[CONFIG_DEFAULT_INPUT_CURRENCY] = toml_edit::value(c.code);
 
-    // if config_exists {
-    //     let toml = std::fs::read_to_string(&config_file).unwrap();
-    //     doc = toml.parse::<DocumentMut>().unwrap();
-    //     let copy = toml.parse::<DocumentMut>().unwrap();
-
-    //     let def = match copy.get(CONFIG_DEFAULT_INPUT_CURRENCY) {
-    //         None => None,
-    //         Some(s) => s.as_str(),
-    //     };
-    //     // let d = doc.get(CONFIG_DEFAULT_INPUT_CURRENCY).c;
-
-    //     c = select_input_currency(def).unwrap();
-    // } else {
-    //     c = select_input_currency(None).unwrap();
-    // }
-
-    // we've already checked that we can access the path so just unwrap it
-    // if config_file.try_exists().unwrap() {
-    //     // do the parsing....
-
-    //     c = select_input_currency(None).unwrap();
-    // } else {
-        // c = select_input_currency(None).unwrap();
-    // }
-
-    // let new_config = Config {
-    //     version: CONFIG_VERSION,
-    //     default_input_currency: Some(c.code),
-    // };
-    //
-    // doc["version"] = toml_edit::value(CONFIG_VERSION);
-    // doc["default_input_currency"] = toml_edit::value(c.code.clone());
-    println!("{}", new_doc.to_string());
-
-    let _ = create_config_directory(config_file);
+    // TODO: don't unwrap these but handle the error and retun ExitCode::FAILURE
+    create_config_directory(&config_file).unwrap();
+    let mut file: std::fs::File = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(config_file).unwrap();
+    file.write_all(new_doc.to_string().as_bytes()).unwrap();
 
     return ExitCode::SUCCESS;
 }
