@@ -64,10 +64,10 @@ fn main() -> ExitCode {
 
     match &cli.command {
         Some(cli::Commands::Config{}) => {
-            println!("do the config thing")
+            config::configure();
         }
         None => {
-            println!("do the calc")
+            println!("do the calc");
         }
     }
 
