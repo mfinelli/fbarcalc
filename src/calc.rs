@@ -19,44 +19,56 @@ use std::collections::BinaryHeap;
 use std::error::Error;
 use inquire::{CustomType, InquireError};
 use inquire::ui::RenderConfig;
+use ordered_float::NotNan;
 
-pub fn calculate() -> i32 {
+pub fn calculate(mut start: f64) -> f64 {
     // let amount: Result<f64, InquireError> = CustomType::new("T:").with_formatter(&|i: f64| format!("{}{:.2}", "$", i)).prompt();
     // println!("{:?}", amount);
+    let mut heap = BinaryHeap::new();
+    heap.push(NotNan::new(start).unwrap());
 
-    let p: CustomType<Option<f64>> = CustomType {
-        message: "Next Transaction:",
-        starting_input: None,
-        formatter: &|i| match i {
-            Some(i) => format!("{}{:.2}", "$", truncate_to_two(i)),
-            None => format!(""),
-        },
-        default_value_formatter: &|i| match i {
-            Some(i) => format!("{}{:.2}", "$", truncate_to_two(i)),
-            None => format!(""),
-        },
-        default: None,
-        validators: vec![],
-        placeholder: Some("12.34"),
-        error_message: "Please enter a valid amount or empty to finish.".into(),
-        help_message: "Do not use the currency symbol and the number should use dots as the decimal separator. Enter an empty value to finish.".into(),
-        parser: &|i| if i == "" {
-            Ok(None)
-        } else {
-            match i.parse::<f64>() {
-                Ok(v) => Ok(Some(truncate_to_two(v))),
-                Err(_) => Err(()),
-            }
-        },
-        render_config: RenderConfig::default(),
-    };
+    loop {
+        let p: CustomType<Option<f64>> = CustomType {
+            message: "Next Transaction:",
+            starting_input: None,
+            formatter: &|i| match i {
+                Some(i) => format!("{}{:.2}", "$", truncate_to_two(i)),
+                None => format!(""),
+            },
+            default_value_formatter: &|i| match i {
+                Some(i) => format!("{}{:.2}", "$", truncate_to_two(i)),
+                None => format!(""),
+            },
+            default: None,
+            validators: vec![],
+            placeholder: Some("12.34"),
+            error_message: "Please enter a valid amount or empty to finish.".into(),
+            help_message: "Do not use the currency symbol and the number should use dots as the decimal separator. Enter an empty value to finish.".into(),
+            parser: &|i| if i == "" {
+                Ok(None)
+            } else {
+                match i.parse::<f64>() {
+                    Ok(v) => Ok(Some(truncate_to_two(v))),
+                    Err(_) => Err(()),
+                }
+            },
+            render_config: RenderConfig::default(),
+        };
 
-    let amount = p.prompt();
-    println!("{:?}", amount);
-    
+        // let amount = p.prompt();
+        match p.prompt() {
+            Ok(v) => match v {
+                Some(v) => {
+                    start += v;
+                    heap.push(NotNan::new(start).unwrap());
+                },
+                None => break,
+            },
+            Err(e) => panic!("{:?}", e),
+        }
+    }
 
-
-    0
+    heap.pop().unwrap().into_inner()
 }
 
 // https://stackoverflow.com/a/63214916

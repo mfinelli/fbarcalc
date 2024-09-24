@@ -67,7 +67,7 @@ fn main() -> ExitCode {
             config::configure();
         }
         None => {
-            calc::calculate();
+            println!("{:?}", calc::calculate(0.0));
         }
     }
 
