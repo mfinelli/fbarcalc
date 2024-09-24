@@ -2,5 +2,17 @@
 name = "fbarcalc"
 version = "0.1.0"
 edition = "2021"
+description = '''
+fbarcalc Copyright 2024 Mario Finelli
+
+A simple program to help you calculate the maximum account value using a
+starting balance and following all of the transactions.
+
+This program comes with ABSOLUTELY NO WARRANTY; This is free software, and you
+are welcome to redistribute it under certain conditions; Please see the copy
+of the GNU General Public License that you should have recevied along with this
+program for details.
+'''
 
 [dependencies]
+clap = { version = "4.5.18", features = ["derive"] }

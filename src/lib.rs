@@ -15,19 +15,4 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use fbarcalc::*;
-
-use clap::Parser;
-
-fn main() {
-    let cli = cli::Cli::parse();
-
-    match &cli.command {
-        Some(cli::Commands::Config{}) => {
-            println!("do the config thing")
-        }
-        None => {
-            println!("do the calc")
-        }
-    }
-}
+pub mod cli;
