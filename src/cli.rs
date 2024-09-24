@@ -23,11 +23,11 @@ use std::path::PathBuf;
 pub struct Cli {
     /// Sets a custom config file
     #[arg(short, long, value_name = "FILE")]
-    config: Option<PathBuf>,
+    pub config: Option<PathBuf>,
 
     /// Set verbosity level
     #[arg(short = 'v', long = None)]
-    debug: bool,
+    pub debug: bool,
 
     #[command(subcommand)]
     pub command: Option<Commands>,
