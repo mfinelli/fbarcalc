@@ -23,17 +23,12 @@ fn main() -> ExitCode {
     let cli = cli::Cli::parse();
 
     match &cli.command {
-        Some(cli::Commands::Config {}) => {
-            return config::configure(cli.config);
-        }
+        Some(cli::Commands::Config {}) => config::configure(cli.config),
         None => {
             // TODO: make this return a result and handle an error with
             // an ExitCode
             let c = config::get_config(cli.config);
-            let max = calc::calculate(c);
-            println!("{}", max);
+            calc::calculate(c)
         }
     }
-
-    ExitCode::SUCCESS
 }

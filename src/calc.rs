@@ -19,9 +19,11 @@ use crate::config;
 use inquire::ui::RenderConfig;
 use inquire::CustomType;
 use ordered_float::NotNan;
+use serde_json::Value;
 use std::collections::BinaryHeap;
+use std::process::ExitCode;
 
-pub fn calculate(conf: config::Config) -> f64 {
+pub fn calculate(conf: config::Config) -> ExitCode {
     let mut heap = BinaryHeap::new();
 
     let currency_code = match conf.default_input_currency {
@@ -104,7 +106,50 @@ pub fn calculate(conf: config::Config) -> f64 {
         }
     }
 
-    heap.pop().unwrap().into_inner()
+    let max = heap.pop().unwrap().into_inner();
+    // TODO: don't unwrap this, handle if it doesn't exist...
+    let exchange_rate =
+        get_exchange_rate(&conf.fca_api_key.unwrap(), currency_code);
+
+    println!();
+    println!(
+        "Maximum value in {}: {}{:.2}",
+        currency_code, currency_symbol, max
+    );
+    println!("Maximum value in USD: ${:.2}", max * exchange_rate);
+
+    ExitCode::SUCCESS
+}
+
+// TODO: we should probably only make this request once per day and then
+// store it in ~/.local/cache...
+fn get_exchange_rate(apikey: &str, currency: &str) -> f64 {
+    static USER_AGENT: &str = concat!(
+        env!("CARGO_PKG_NAME"),
+        "/",
+        env!("CARGO_PKG_VERSION"),
+        " https://github.com/mfinelli/fbarcalc"
+    );
+
+    let client = reqwest::blocking::Client::builder()
+        .gzip(true)
+        .user_agent(USER_AGENT)
+        .build()
+        .unwrap();
+    let body = client
+        .get("https://api.freecurrencyapi.com/v1/latest")
+        .query(&[
+            ("apikey", Some(apikey.to_string())),
+            ("base_currency", Some("USD".to_string())),
+            ("currencies", Some(currency.to_string())),
+        ])
+        .send()
+        .unwrap()
+        .text()
+        .unwrap();
+
+    let v: Value = serde_json::from_str(&body).unwrap();
+    1.0 / v["data"][currency].as_f64().unwrap()
 }
 
 // https://stackoverflow.com/a/63214916

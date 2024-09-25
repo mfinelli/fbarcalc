@@ -17,7 +17,7 @@
 
 extern crate dirs;
 
-use inquire::Select;
+use inquire::{Password, Select};
 use std::error::Error;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -30,6 +30,7 @@ use toml_edit::DocumentMut;
 const CONFIG_VERSION: i64 = 1;
 
 const CONFIG_DEFAULT_INPUT_CURRENCY: &str = "default_input_currency";
+const CONFIG_FCA_API_KEY: &str = "fca_api_key";
 
 pub const SUPPORTED_CURRENCIES: [&Currency; 4] = [
     &Currency {
@@ -65,6 +66,7 @@ pub struct Currency {
 pub struct Config {
     pub version: i64,
     pub default_input_currency: Option<String>,
+    pub fca_api_key: Option<String>,
 }
 
 pub fn get_config_file(cli_config: Option<PathBuf>) -> PathBuf {
@@ -96,9 +98,14 @@ pub fn get_config(config: Option<PathBuf>) -> Config {
                     .get(CONFIG_DEFAULT_INPUT_CURRENCY)
                     .map(|s| s.as_str().unwrap().to_string());
 
+                let k = doc
+                    .get(CONFIG_FCA_API_KEY)
+                    .map(|s| s.as_str().unwrap().to_string());
+
                 Config {
                     version: v,
                     default_input_currency: c,
+                    fca_api_key: k,
                 }
             } else {
                 panic!("config file doesn't exist yet..."); // TODO: do better
@@ -183,8 +190,35 @@ pub fn configure(config: Option<PathBuf>) -> ExitCode {
         Some(s) => select_input_currency(s.as_str(), true).unwrap(),
     };
 
+    let key = Password::new("Freecurrency.com API key:")
+        .with_display_mode(inquire::PasswordDisplayMode::Masked)
+        .with_formatter(&|k| {
+            if k.is_empty() {
+                match doc.get(CONFIG_FCA_API_KEY) {
+                    None => String::from(""),
+                    Some(s) => "*".repeat(s.as_str().unwrap().chars().count()),
+                }
+            } else {
+                "*".repeat(k.chars().count())
+            }
+        })
+        .without_confirmation()
+        .prompt();
+
     new_doc["version"] = toml_edit::value(CONFIG_VERSION);
     new_doc[CONFIG_DEFAULT_INPUT_CURRENCY] = toml_edit::value(c.code);
+
+    match key {
+        Ok(v) => {
+            if !v.is_empty() {
+                new_doc[CONFIG_FCA_API_KEY] = toml_edit::value(v);
+            }
+        }
+        Err(_) => {
+            println!("error: there was an error getting the API key");
+            return ExitCode::FAILURE;
+        }
+    };
 
     // TODO: don't unwrap these but handle the error and retun ExitCode::FAILURE
     create_config_directory(&config_file).unwrap();
