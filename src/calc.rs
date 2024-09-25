@@ -69,19 +69,19 @@ pub fn calculate(conf: config::Config) -> f64 {
             message: "Next Transaction:",
             starting_input: None,
             formatter: &|i| match i {
-                Some(i) => format!("{}{:.2}", "$", truncate_to_two(i)),
-                None => format!(""),
+                Some(i) => format!("{}{:.2}", currency_symbol, truncate_to_two(i)),
+                None => String::new(),
             },
             default_value_formatter: &|i| match i {
-                Some(i) => format!("{}{:.2}", "$", truncate_to_two(i)),
-                None => format!(""),
+                Some(i) => format!("{}{:.2}", currency_symbol, truncate_to_two(i)),
+                None => String::new(),
             },
             default: None,
             validators: vec![],
             placeholder: Some("12.34"),
             error_message: "Please enter a valid amount or empty to finish.".into(),
             help_message: "Do not use the currency symbol and the number should use dots as the decimal separator. Enter an empty value to finish.".into(),
-            parser: &|i| if i == "" {
+            parser: &|i| if i.is_empty() {
                 Ok(None)
             } else {
                 match i.parse::<f64>() {

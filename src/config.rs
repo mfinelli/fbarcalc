@@ -31,7 +31,7 @@ const CONFIG_VERSION: i64 = 1;
 
 const CONFIG_DEFAULT_INPUT_CURRENCY: &str = "default_input_currency";
 
-pub const SUPPORTED_CURRENCIES: [&'static Currency; 4] = [
+pub const SUPPORTED_CURRENCIES: [&Currency; 4] = [
     &Currency {
         code: "EUR",
         name: "Euro",
@@ -92,10 +92,9 @@ pub fn get_config(config: Option<PathBuf>) -> Config {
                     Some(i) => i.as_integer().unwrap(),
                 };
 
-                let c = match doc.get(CONFIG_DEFAULT_INPUT_CURRENCY) {
-                    None => None,
-                    Some(s) => Some(s.as_str().unwrap().to_string()),
-                };
+                let c = doc
+                    .get(CONFIG_DEFAULT_INPUT_CURRENCY)
+                    .map(|s| s.as_str().unwrap().to_string());
 
                 Config {
                     version: v,
@@ -109,9 +108,7 @@ pub fn get_config(config: Option<PathBuf>) -> Config {
     }
 }
 
-fn create_config_directory(
-    config_file: &PathBuf,
-) -> Result<(), std::io::Error> {
+fn create_config_directory(config_file: &Path) -> Result<(), std::io::Error> {
     let p = config_file.parent().unwrap();
     if p == Path::new("") || p == Path::new(".") || p == Path::new("..") {
         return Ok(());
@@ -200,5 +197,5 @@ pub fn configure(config: Option<PathBuf>) -> ExitCode {
         .unwrap();
     file.write_all(new_doc.to_string().as_bytes()).unwrap();
 
-    return ExitCode::SUCCESS;
+    ExitCode::SUCCESS
 }
