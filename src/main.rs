@@ -33,9 +33,8 @@ fn main() -> ExitCode {
             // TODO: make this return a result and handle an error with
             // an ExitCode
             let c = config::get_config(cli.config);
-
             let max = calc::calculate(c);
-            println!("Max: {:?}", max);
+            println!("{}", max);
         }
     }
 

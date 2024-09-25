@@ -16,27 +16,44 @@
  */
 
 use std::collections::BinaryHeap;
-use std::error::Error;
-use inquire::{CustomType, InquireError};
+use inquire::CustomType;
 use inquire::ui::RenderConfig;
 use ordered_float::NotNan;
 use crate::config;
 
 pub fn calculate(conf: config::Config) -> f64 {
-    // let def_currency = match conf.default_input_currency {
-    //     None => None,
-    //     Some(c) => {
-    //         let a = c.clone();
-    //         Some(a.as_str())
-    //     },
-    // };
-
-    // let currency = config::select_input_currency(def_currency, false).unwrap();
-
-    let mut start = 0.0;
-    // let amount: Result<f64, InquireError> = CustomType::new("T:").with_formatter(&|i: f64| format!("{}{:.2}", "$", i)).prompt();
-    // println!("{:?}", amount);
     let mut heap = BinaryHeap::new();
+
+    let currency_code = match conf.default_input_currency {
+        None => config::select_input_currency(None, false).unwrap().code,
+        Some(c) => config::select_input_currency(Some(c.as_str()), false).unwrap().code,
+    };
+
+    let currency_symbol = config::SUPPORTED_CURRENCIES.iter().find(|c| c.code == currency_code).unwrap().symbol;
+
+    let mut start: f64;
+
+    let amount: CustomType<f64> = CustomType {
+        message: "Starting value:",
+        starting_input: None,
+        formatter: &|i| format!("{}{:.2}", currency_symbol, truncate_to_two(i)),
+        default_value_formatter: &|i| format!("{}{:.2}", currency_symbol, truncate_to_two(i)),
+        default: None,
+        validators: vec![],
+        placeholder: Some("12.34"),
+        error_message: "Please enter a valid amount.".into(),
+        help_message: "Do not use the currency symbol and the number should use dots as the decimal separator.".into(),
+        parser: &|i| match i.parse::<f64>() {
+                Ok(v) => Ok(truncate_to_two(v)),
+                Err(_) => Err(()),
+        },
+        render_config: RenderConfig::default(),
+    };
+
+    match amount.prompt() {
+        Ok(v) => start = v,
+        Err(e) => panic!("{:?}", e),
+    };
     heap.push(NotNan::new(start).unwrap());
 
     loop {
@@ -67,7 +84,6 @@ pub fn calculate(conf: config::Config) -> f64 {
             render_config: RenderConfig::default(),
         };
 
-        // let amount = p.prompt();
         match p.prompt() {
             Ok(v) => match v {
                 Some(v) => {

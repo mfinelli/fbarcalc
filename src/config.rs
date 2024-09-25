@@ -31,43 +31,40 @@ const CONFIG_VERSION: i64 = 1;
 
 const CONFIG_DEFAULT_INPUT_CURRENCY: &str = "default_input_currency";
 
+pub const SUPPORTED_CURRENCIES: [&'static Currency; 4] = [
+        &Currency {
+            code: "EUR",
+            name: "Euro",
+            symbol: "€",
+        },
+        &Currency {
+            code: "GBP",
+            name: "British Pound Sterling",
+            symbol: "£",
+        },
+        &Currency {
+            code: "JPY",
+            name: "Japanese Yen",
+            symbol: "¥",
+        },
+        &Currency {
+            code: "USD",
+            name: "US Dollar",
+            symbol: "$",
+        },
+];
+
 #[derive(Clone, Debug)]
-pub struct Currency<'a> {
-    pub code: &'a str,
-    pub name: &'a str,
-    pub symbol: &'a str,
+pub struct Currency {
+    pub code: &'static str,
+    pub name: &'static str,
+    pub symbol: &'static str,
 }
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub version: i64,
     pub default_input_currency: Option<String>,
-}
-
-/// Returns a vector of the currencies that we're currently supporting.
-pub fn supported_currencies() -> Vec<Currency<'static>> {
-    vec![
-        Currency {
-            code: "EUR",
-            name: "Euro",
-            symbol: "€",
-        },
-        Currency {
-            code: "GBP",
-            name: "British Pound Sterling",
-            symbol: "£",
-        },
-        Currency {
-            code: "JPY",
-            name: "Japanese Yen",
-            symbol: "¥",
-        },
-        Currency {
-            code: "USD",
-            name: "US Dollar",
-            symbol: "$",
-        },
-    ]
 }
 
 pub fn get_config_file(cli_config: Option<PathBuf>) -> PathBuf {
@@ -126,11 +123,11 @@ fn create_config_directory(config_file: &PathBuf) -> Result<(), std::io::Error> 
     }
 }
 
-pub fn select_input_currency(default: Option<&str>, is_default: bool) -> Result<Currency, Box<dyn Error>> {
-    let options = supported_currencies().iter().map(|c| c.name).collect::<Vec<_>>();
+pub fn select_input_currency(default: Option<&str>, is_default: bool) -> Result<&Currency, Box<dyn Error>> {
+    let options = SUPPORTED_CURRENCIES.iter().map(|c| c.name).collect::<Vec<_>>();
     let start = match default {
         // TODO: handle one that we don't have configured
-        Some(code) => supported_currencies().iter().position(|c| c.code == code).unwrap(),
+        Some(code) => SUPPORTED_CURRENCIES.iter().position(|c| c.code == code).unwrap(),
         None => 0,
     };
 
@@ -142,7 +139,7 @@ pub fn select_input_currency(default: Option<&str>, is_default: bool) -> Result<
 
     let ans = Select::new(p, options).with_starting_cursor(start).prompt();
     match ans {
-        Ok(choice) => Ok(supported_currencies().iter().find(|c| c.name == choice).unwrap().clone()),
+        Ok(choice) => Ok(SUPPORTED_CURRENCIES.iter().find(|c| c.name == choice).unwrap()),
         Err(e) => panic!("{}", e), // TODO: do better
     }
 }
