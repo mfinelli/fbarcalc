@@ -44,8 +44,8 @@ pub enum Commands {
 
 #[cfg(test)]
 mod tests {
-    use clap::CommandFactory;
     use super::*;
+    use clap::CommandFactory;
 
     #[test]
     fn verify_cli() {

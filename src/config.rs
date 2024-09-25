@@ -19,39 +19,39 @@ extern crate dirs;
 
 use inquire::Select;
 use std::error::Error;
-use std::path::PathBuf;
-use std::path::Path;
-use toml_edit::DocumentMut;
-use std::process::ExitCode;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::ExitCode;
+use toml_edit::DocumentMut;
 
 const CONFIG_VERSION: i64 = 1;
 
 const CONFIG_DEFAULT_INPUT_CURRENCY: &str = "default_input_currency";
 
 pub const SUPPORTED_CURRENCIES: [&'static Currency; 4] = [
-        &Currency {
-            code: "EUR",
-            name: "Euro",
-            symbol: "€",
-        },
-        &Currency {
-            code: "GBP",
-            name: "British Pound Sterling",
-            symbol: "£",
-        },
-        &Currency {
-            code: "JPY",
-            name: "Japanese Yen",
-            symbol: "¥",
-        },
-        &Currency {
-            code: "USD",
-            name: "US Dollar",
-            symbol: "$",
-        },
+    &Currency {
+        code: "EUR",
+        name: "Euro",
+        symbol: "€",
+    },
+    &Currency {
+        code: "GBP",
+        name: "British Pound Sterling",
+        symbol: "£",
+    },
+    &Currency {
+        code: "JPY",
+        name: "Japanese Yen",
+        symbol: "¥",
+    },
+    &Currency {
+        code: "USD",
+        name: "US Dollar",
+        symbol: "$",
+    },
 ];
 
 #[derive(Clone, Debug)]
@@ -82,32 +82,36 @@ pub fn get_config_file(cli_config: Option<PathBuf>) -> PathBuf {
 pub fn get_config(config: Option<PathBuf>) -> Config {
     let config_file = get_config_file(config);
     match config_file.try_exists() {
-        Ok(e) => if e {
-            let toml = std::fs::read_to_string(&config_file).unwrap();
-            let doc = toml.parse::<DocumentMut>().unwrap();
+        Ok(e) => {
+            if e {
+                let toml = std::fs::read_to_string(&config_file).unwrap();
+                let doc = toml.parse::<DocumentMut>().unwrap();
 
-            let v = match doc.get("version") {
-                None => CONFIG_VERSION,
-                Some(i) => i.as_integer().unwrap(),
-            };
+                let v = match doc.get("version") {
+                    None => CONFIG_VERSION,
+                    Some(i) => i.as_integer().unwrap(),
+                };
 
-            let c = match doc.get(CONFIG_DEFAULT_INPUT_CURRENCY) {
-                None => None,
-                Some(s) => Some(s.as_str().unwrap().to_string()),
-            };
+                let c = match doc.get(CONFIG_DEFAULT_INPUT_CURRENCY) {
+                    None => None,
+                    Some(s) => Some(s.as_str().unwrap().to_string()),
+                };
 
-            Config {
-                version: v,
-                default_input_currency: c,
+                Config {
+                    version: v,
+                    default_input_currency: c,
+                }
+            } else {
+                panic!("config file doesn't exist yet..."); // TODO: do better
             }
-        } else {
-            panic!("config file doesn't exist yet..."); // TODO: do better
-        },
+        }
         Err(_) => panic!("there was an error checking the config file"), // TODO: do better
     }
 }
 
-fn create_config_directory(config_file: &PathBuf) -> Result<(), std::io::Error> {
+fn create_config_directory(
+    config_file: &PathBuf,
+) -> Result<(), std::io::Error> {
     let p = config_file.parent().unwrap();
     if p == Path::new("") || p == Path::new(".") || p == Path::new("..") {
         return Ok(());
@@ -115,19 +119,30 @@ fn create_config_directory(config_file: &PathBuf) -> Result<(), std::io::Error> 
 
     match p.try_exists() {
         Err(e) => Err(e),
-        Ok(e) => if e {
-            Ok(())
-        } else {
-            std::fs::create_dir(p)
+        Ok(e) => {
+            if e {
+                Ok(())
+            } else {
+                std::fs::create_dir(p)
+            }
         }
     }
 }
 
-pub fn select_input_currency(default: Option<&str>, is_default: bool) -> Result<&Currency, Box<dyn Error>> {
-    let options = SUPPORTED_CURRENCIES.iter().map(|c| c.name).collect::<Vec<_>>();
+pub fn select_input_currency(
+    default: Option<&str>,
+    is_default: bool,
+) -> Result<&Currency, Box<dyn Error>> {
+    let options = SUPPORTED_CURRENCIES
+        .iter()
+        .map(|c| c.name)
+        .collect::<Vec<_>>();
     let start = match default {
         // TODO: handle one that we don't have configured
-        Some(code) => SUPPORTED_CURRENCIES.iter().position(|c| c.code == code).unwrap(),
+        Some(code) => SUPPORTED_CURRENCIES
+            .iter()
+            .position(|c| c.code == code)
+            .unwrap(),
         None => 0,
     };
 
@@ -139,7 +154,10 @@ pub fn select_input_currency(default: Option<&str>, is_default: bool) -> Result<
 
     let ans = Select::new(p, options).with_starting_cursor(start).prompt();
     match ans {
-        Ok(choice) => Ok(SUPPORTED_CURRENCIES.iter().find(|c| c.name == choice).unwrap()),
+        Ok(choice) => Ok(SUPPORTED_CURRENCIES
+            .iter()
+            .find(|c| c.name == choice)
+            .unwrap()),
         Err(e) => panic!("{}", e), // TODO: do better
     }
 }
@@ -173,7 +191,13 @@ pub fn configure(config: Option<PathBuf>) -> ExitCode {
 
     // TODO: don't unwrap these but handle the error and retun ExitCode::FAILURE
     create_config_directory(&config_file).unwrap();
-    let mut file: std::fs::File = OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open(config_file).unwrap();
+    let mut file: std::fs::File = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(config_file)
+        .unwrap();
     file.write_all(new_doc.to_string().as_bytes()).unwrap();
 
     return ExitCode::SUCCESS;

@@ -15,21 +15,29 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::collections::BinaryHeap;
-use inquire::CustomType;
-use inquire::ui::RenderConfig;
-use ordered_float::NotNan;
 use crate::config;
+use inquire::ui::RenderConfig;
+use inquire::CustomType;
+use ordered_float::NotNan;
+use std::collections::BinaryHeap;
 
 pub fn calculate(conf: config::Config) -> f64 {
     let mut heap = BinaryHeap::new();
 
     let currency_code = match conf.default_input_currency {
         None => config::select_input_currency(None, false).unwrap().code,
-        Some(c) => config::select_input_currency(Some(c.as_str()), false).unwrap().code,
+        Some(c) => {
+            config::select_input_currency(Some(c.as_str()), false)
+                .unwrap()
+                .code
+        }
     };
 
-    let currency_symbol = config::SUPPORTED_CURRENCIES.iter().find(|c| c.code == currency_code).unwrap().symbol;
+    let currency_symbol = config::SUPPORTED_CURRENCIES
+        .iter()
+        .find(|c| c.code == currency_code)
+        .unwrap()
+        .symbol;
 
     let mut start: f64;
 
@@ -89,7 +97,7 @@ pub fn calculate(conf: config::Config) -> f64 {
                 Some(v) => {
                     start += v;
                     heap.push(NotNan::new(start).unwrap());
-                },
+                }
                 None => break,
             },
             Err(e) => panic!("{:?}", e),

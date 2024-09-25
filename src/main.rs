@@ -15,18 +15,15 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-extern crate dirs;
-
-use fbarcalc::*;
-
 use clap::Parser;
+use fbarcalc::*;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let cli = cli::Cli::parse();
 
     match &cli.command {
-        Some(cli::Commands::Config{}) => {
+        Some(cli::Commands::Config {}) => {
             return config::configure(cli.config);
         }
         None => {
