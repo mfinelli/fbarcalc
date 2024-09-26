@@ -85,7 +85,7 @@ jobs:
           rm -rfv doc/.lock
           tar acvf fbarcalc_${{ github.ref_name }}_amd64.tar.zst \
             Cargo.{lock,toml} LICENSE README.md doc fbarcalc src vendor
-      - uses: ncipollo@release-action@v1
+      - uses: ncipollo/release-action@v1
         with:
           artifacts: fbarcalc_*.tar.*
           token: ${{ secrets.GITHUB_TOKEN }}
