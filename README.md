@@ -41,6 +41,16 @@ fbarcalc
 
 ![Demo](fbarcalc.gif)
 
+### docker
+
+There's also a docker image available, you either need to pass the
+configuration as a volume or launch the image with `bash` and then run the
+configure and run steps separately:
+
+```shell
+docker run --rm -it mfinelli/fbarcalc bash
+```
+
 ## development
 
 To regenerate the [asciinema](https://asciinema.org):
