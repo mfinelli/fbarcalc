@@ -15,7 +15,7 @@ program for details.
 '''
 
 [dependencies]
-clap = { version = "4.5.19", features = ["derive"] }
+clap = { version = "4.5.20", features = ["derive"] }
 dirs = { version = "5.0.1" }
 inquire = { version = "0.7.5" }
 ordered-float = { version = "4.3.0" }
