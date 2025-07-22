@@ -86,12 +86,16 @@ jobs:
   release:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [main, docker]
+    needs: [main, main-macos, docker]
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
       - run: cargo vendor --locked
       - run: cargo doc --frozen --no-deps --release
       - run: cargo build --frozen --release
@@ -99,10 +103,41 @@ jobs:
           cp target/release/fbarcalc .
           cp -r target/doc .
           rm -rfv doc/.lock
-          tar acvf fbarcalc_${{ github.ref_name }}_amd64.tar.zst \
+          tar acvf fbarcalc_${{ github.ref_name }}_linux_amd64.tar.zst \
             Cargo.{lock,toml} CHANGELOG.md LICENSE README.md doc fbarcalc \
             src vendor
+          gpg -ba fbarcalc_${{ github.ref_name }}_linux_amd64.tar.zst
       - uses: ncipollo/release-action@v1
         with:
+          artifacts: fbarcalc_*.tar.*
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  release-macos:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+      - run: cargo vendor --locked
+      - run: cargo doc --frozen --no-deps --release
+      - run: cargo build --frozen --release
+      - run: |
+          cp target/release/fbarcalc .
+          cp -r target/doc .
+          rm -rfv doc/.lock
+          tar acvf fbarcalc_${{ github.ref_name }}_macos_arm64.tar.zst \
+            Cargo.{lock,toml} CHANGELOG.md LICENSE README.md doc fbarcalc \
+            src vendor
+          gpg -ba fbarcalc_${{ github.ref_name }}_macos_arm64.tar.zst
+      - uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
           artifacts: fbarcalc_*.tar.*
           token: ${{ secrets.GITHUB_TOKEN }}
