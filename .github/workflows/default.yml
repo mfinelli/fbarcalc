@@ -16,7 +16,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cargo/registry
-          key: cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-linux-${{ hashFiles('**/Cargo.lock') }}
       - run: |
           rustc --version
           cargo --version
@@ -29,10 +29,25 @@ jobs:
       - run: cargo build --locked --release --verbose
       - run: ./vcheck.bash
 
+  main-macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: cargo-macos-${{ hashFiles('**/Cargo.lock') }}
+      - run: |
+          rustc --version
+          cargo --version
+      - run: cargo test --locked
+      - run: cargo build --locked --release --verbose
+
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    needs: [main]
+    needs: [main, main-macos]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
