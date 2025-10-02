@@ -1,13 +1,13 @@
-FROM rust:slim as source
+FROM rust:slim AS source
 WORKDIR /fbarcalc
 COPY . /fbarcalc
 RUN cargo vendor --locked
 
-FROM source as build
+FROM source AS build
 RUN apt-get update && apt-get install -y libssl-dev pkg-config
 RUN cargo build --frozen --release --verbose
 
-FROM build as test
+FROM build AS test
 RUN cargo test
 
 FROM debian:stable-slim
