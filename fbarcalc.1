@@ -1,0 +1,61 @@
+.TH FBARCALC 1
+.SH NAME
+.B fbarcalc
+- help to calculate your maximum account value
+
+.SH SYNOPSIS
+.B fbarcalc
+[config]
+
+.SH DESCRIPTION
+.B fbarcalc
+is a tool that helps you to calculate the maximum account value in an account
+so that you can determine if you need to submit an FBAR and what the
+associated value is.
+
+With an account's starting balance and a list of transactions you input them
+one-by one and the program will keep track of whatever the maximum value
+reached is.
+
+We presume that we're working with a foreign currency given that we're working
+on the FBAR so the input should be in the original currency and at the end of
+the input the program will return the value in USD.
+
+.RS
+Currently supported currencies:
+.nf
+- Euro (EUR: €)
+- British Pound Sterling (GBP: £)
+- Japanese Yen (JPY: ¥)
+.fi
+.RE
+
+You'll need an API key from
+.BI freecurrencyapi.com
+in order to perform the conversion. The free tier is quite generous and should
+be more than enough for personal use.
+
+.SH NOTES
+The author wrote this program for personal use. The author is not an accountant
+and disclaims any liability resulting from the use of this program. The author
+strongly recommends the use of a licensed CPA.
+
+For more information see the LICENSE (GPL-3.0-or-later) that you should have
+received with the program, in particular sections 15 (Disclaimer of Warranty)
+and 16 (Limitation of Liability).
+
+.SH FILES
+.TP
+.I
+~/.config/fbarcalc/config.toml
+
+.SH EXAMPLES
+To run the interactive configuration wizard run with the
+.BR config
+argument:
+.PP
+.RS
+fbarcalc config
+.RE
+.PP
+Make sure to have your API key ready!
