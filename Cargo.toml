@@ -19,6 +19,6 @@ clap = { version = "4.5.48", features = ["derive"] }
 dirs = { version = "6.0.0" }
 inquire = { version = "0.9.1" }
 ordered-float = { version = "5.1.0" }
-reqwest = { version = "0.12.23", features = ["blocking", "gzip"] }
+reqwest = { version = "0.12.24", features = ["blocking", "gzip"] }
 serde_json = { version = "1.0.145" }
 toml_edit = { version = "0.23.6" }
