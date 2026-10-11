@@ -3,7 +3,7 @@ name = "fbarcalc"
 version = "0.2.0"
 edition = "2021"
 description = '''
-fbarcalc Copyright 2024 Mario Finelli
+fbarcalc Copyright 2024-2026 Mario Finelli
 
 A simple program to help you calculate the maximum account value using a
 starting balance and following all of the transactions.
