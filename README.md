@@ -27,7 +27,8 @@ currency (which will be confirmed on each run) and an API key from
 [freecurrencyapi.com](https://freecurrencyapi.com) and is used to convert the
 input currency to USD at the end of the process. At the time of writing the
 free tier is 5000 requests per month which should be more than enough for the
-personal usage once per year.
+personal usage once per year. The API key isn't needed if the input currency is
+USD.
 
 ```shell
 fbarcalc config
@@ -40,6 +41,25 @@ fbarcalc
 ```
 
 ![Demo](fbarcalc.gif)
+
+To see how the maximum was reached use `--verbose` (or `-v`). After you have
+entered the transactions you also get the balance after each of them, with the
+maximum marked, and the exchange rate that was used for the conversion, so
+that you can check the numbers:
+
+```
+#  Transaction   Balance
+0        start  €1500.00
+1      €320.75  €1820.75
+2    -€1200.00   €620.75
+3       €80.10   €700.85
+4     €2000.00  €2700.85  <- maximum
+5     -€450.00  €2250.85
+
+Maximum value in EUR: €2700.85
+Exchange rate: 1 EUR = 1.0842 USD
+Maximum value in USD: $2928.26
+```
 
 ### docker
 

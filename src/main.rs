@@ -1,5 +1,5 @@
 /* fbarcalc: find account maximum value
- * Copyright 2024 Mario Finelli
+ * Copyright 2024-2026 Mario Finelli
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,11 +24,12 @@ fn main() -> ExitCode {
 
     match &cli.command {
         Some(cli::Commands::Config {}) => config::configure(cli.config),
-        None => {
-            // TODO: make this return a result and handle an error with
-            // an ExitCode
-            let c = config::get_config(cli.config);
-            calc::calculate(c)
-        }
+        None => match config::get_config(cli.config) {
+            Ok(c) => calc::calculate(c, cli.verbose),
+            Err(e) => {
+                eprintln!("error: {}", e);
+                ExitCode::FAILURE
+            }
+        },
     }
 }
