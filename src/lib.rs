@@ -1,5 +1,5 @@
 /* fbarcalc: find account maximum value
- * Copyright 2024 Mario Finelli
+ * Copyright 2024-2026 Mario Finelli
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,3 +18,4 @@
 pub mod calc;
 pub mod cli;
 pub mod config;
+pub mod money;

@@ -1,5 +1,5 @@
 /* fbarcalc: find account maximum value
- * Copyright 2024 Mario Finelli
+ * Copyright 2024-2026 Mario Finelli
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,16 +16,28 @@
  */
 
 use crate::config;
+use crate::money;
 use inquire::ui::RenderConfig;
 use inquire::CustomType;
-use ordered_float::NotNan;
 use serde_json::Value;
-use std::collections::BinaryHeap;
 use std::process::ExitCode;
 
-pub fn calculate(conf: config::Config) -> ExitCode {
-    let mut heap = BinaryHeap::new();
+/// Find the highest balance that the account reaches, including the starting
+/// balance and the balance after each transaction, or `None` if the running
+/// total overflows.
+pub fn max_balance(start: i64, transactions: &[i64]) -> Option<i64> {
+    let mut balance = start;
+    let mut max = start;
 
+    for &t in transactions {
+        balance = balance.checked_add(t)?;
+        max = max.max(balance);
+    }
+
+    Some(max)
+}
+
+pub fn calculate(conf: config::Config) -> ExitCode {
     let currency_code = match conf.default_input_currency {
         None => config::select_input_currency(None, false).unwrap().code,
         Some(c) => {
@@ -41,82 +53,79 @@ pub fn calculate(conf: config::Config) -> ExitCode {
         .unwrap()
         .symbol;
 
-    let mut start: f64;
+    let format = |cents: i64| money::format_money(currency_symbol, cents);
+    let format_optional =
+        |cents: Option<i64>| cents.map(format).unwrap_or_default();
 
-    let amount: CustomType<f64> = CustomType {
+    let amount: CustomType<i64> = CustomType {
         message: "Starting value:",
         starting_input: None,
-        formatter: &|i| format!("{}{:.2}", currency_symbol, truncate_to_two(i)),
-        default_value_formatter: &|i| format!("{}{:.2}", currency_symbol, truncate_to_two(i)),
+        formatter: &format,
+        default_value_formatter: &format,
         default: None,
         validators: vec![],
         placeholder: Some("12.34"),
         error_message: "Please enter a valid amount.".into(),
         help_message: "Do not use the currency symbol and the number should use dots as the decimal separator.".into(),
-        parser: &|i| match i.parse::<f64>() {
-                Ok(v) => Ok(truncate_to_two(v)),
-                Err(_) => Err(()),
-        },
+        parser: &|i| money::parse_amount(i).map_err(|_| ()),
         render_config: RenderConfig::default(),
     };
 
-    match amount.prompt() {
-        Ok(v) => start = v,
+    let start = match amount.prompt() {
+        Ok(v) => v,
         Err(e) => panic!("{:?}", e),
     };
-    heap.push(NotNan::new(start).unwrap());
+
+    let mut transactions = Vec::new();
 
     loop {
-        let p: CustomType<Option<f64>> = CustomType {
+        let p: CustomType<Option<i64>> = CustomType {
             message: "Next Transaction:",
             starting_input: None,
-            formatter: &|i| match i {
-                Some(i) => format!("{}{:.2}", currency_symbol, truncate_to_two(i)),
-                None => String::new(),
-            },
-            default_value_formatter: &|i| match i {
-                Some(i) => format!("{}{:.2}", currency_symbol, truncate_to_two(i)),
-                None => String::new(),
-            },
+            formatter: &format_optional,
+            default_value_formatter: &format_optional,
             default: None,
             validators: vec![],
             placeholder: Some("12.34"),
             error_message: "Please enter a valid amount or empty to finish.".into(),
             help_message: "Do not use the currency symbol and the number should use dots as the decimal separator. Enter an empty value to finish.".into(),
-            parser: &|i| if i.is_empty() {
+            parser: &|i| if i.trim().is_empty() {
                 Ok(None)
             } else {
-                match i.parse::<f64>() {
-                    Ok(v) => Ok(Some(truncate_to_two(v))),
-                    Err(_) => Err(()),
-                }
+                money::parse_amount(i).map(Some).map_err(|_| ())
             },
             render_config: RenderConfig::default(),
         };
 
         match p.prompt() {
-            Ok(v) => match v {
-                Some(v) => {
-                    start += v;
-                    heap.push(NotNan::new(start).unwrap());
-                }
-                None => break,
-            },
+            Ok(Some(v)) => transactions.push(v),
+            Ok(None) => break,
             Err(e) => panic!("{:?}", e),
         }
     }
 
-    let max = heap.pop().unwrap().into_inner();
+    let max = match max_balance(start, &transactions) {
+        Some(m) => m,
+        None => {
+            println!("error: the account balance is too large to calculate");
+            return ExitCode::FAILURE;
+        }
+    };
+
     // TODO: don't unwrap this, handle if it doesn't exist...
     let exchange_rate =
         get_exchange_rate(&conf.fca_api_key.unwrap(), currency_code);
 
     println!();
     println!(
-        "Maximum value in {}: {}{:.2}",
-        currency_code, currency_symbol, max
+        "Maximum value in {}: {}",
+        currency_code,
+        money::format_money(currency_symbol, max)
     );
-    println!("Maximum value in USD: ${:.2}", max * exchange_rate);
+    println!(
+        "Maximum value in USD: {}",
+        money::format_money("$", money::convert_cents(max, exchange_rate))
+    );
 
     ExitCode::SUCCESS
 }
@@ -152,17 +161,71 @@ fn get_exchange_rate(apikey: &str, currency: &str) -> f64 {
     1.0 / v["data"][currency].as_f64().unwrap()
 }
 
-// https://stackoverflow.com/a/63214916
-fn truncate_to_two(before: f64) -> f64 {
-    (before * 100.0).floor() / 100.0
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_truncate_to_two() {
-        assert_eq!(truncate_to_two(12.345), 12.34);
+    fn max_with_no_transactions_is_the_start() {
+        assert_eq!(max_balance(1000, &[]), Some(1000));
+        assert_eq!(max_balance(-1000, &[]), Some(-1000));
+        assert_eq!(max_balance(0, &[]), Some(0));
+    }
+
+    #[test]
+    fn max_is_the_start_if_the_balance_only_falls() {
+        assert_eq!(max_balance(1000, &[-100, -200, -300]), Some(1000));
+    }
+
+    #[test]
+    fn max_is_the_end_if_the_balance_only_rises() {
+        assert_eq!(max_balance(1000, &[100, 200, 300]), Some(1600));
+    }
+
+    #[test]
+    fn max_can_be_in_the_middle() {
+        // 1000, 1500, 2500, 500, 700
+        assert_eq!(max_balance(1000, &[500, 1000, -2000, 200]), Some(2500));
+    }
+
+    #[test]
+    fn max_is_the_peak_not_the_final_balance() {
+        assert_eq!(max_balance(0, &[5000, -5000]), Some(5000));
+    }
+
+    #[test]
+    fn max_can_be_negative() {
+        // -1000, -1500, -1200
+        assert_eq!(max_balance(-1000, &[-500, 300]), Some(-1000));
+        assert_eq!(max_balance(-2000, &[500, 300]), Some(-1200));
+    }
+
+    #[test]
+    fn max_can_climb_out_of_the_red() {
+        // -1000, -500, 250
+        assert_eq!(max_balance(-1000, &[500, 750]), Some(250));
+    }
+
+    #[test]
+    fn max_handles_repeated_peaks() {
+        assert_eq!(max_balance(100, &[100, -100, 100, -100]), Some(200));
+    }
+
+    #[test]
+    fn max_reports_overflow_instead_of_wrapping() {
+        assert_eq!(max_balance(i64::MAX, &[1]), None);
+        assert_eq!(max_balance(i64::MIN, &[-1]), None);
+        assert_eq!(max_balance(i64::MAX, &[-1, 1]), Some(i64::MAX));
+    }
+
+    #[test]
+    fn max_with_amounts_parsed_from_input() {
+        let amounts: Vec<i64> = ["8.2", "-0.10", "19.99", "-30"]
+            .iter()
+            .map(|s| money::parse_amount(s).unwrap())
+            .collect();
+
+        // 10.00 start, 18.20, 18.10, 38.09, 8.09
+        assert_eq!(max_balance(1000, &amounts), Some(3809));
     }
 }
