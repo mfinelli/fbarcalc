@@ -2,7 +2,7 @@
 
 This document keeps track of major changes to the `fbarcalc` program.
 
-## Unreleased
+## 2026-10-15: v0.3.0
 
 - Fix amounts being read one cent too low: floating point error turned values
   such as `8.2` and `19.99` into `8.19` and `19.98`. Amounts are now exact and

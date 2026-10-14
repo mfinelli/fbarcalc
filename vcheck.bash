@@ -10,7 +10,7 @@ fi
 dver="$(grep LABEL Dockerfile | grep image.version | awk -F= '{print $2}')"
 cver="$(grep '^version' Cargo.toml | awk -F\" '{print $2}')"
 
-if [[ $dver != "v$cver" ]]; then
+if [[ $dver != "$cver" ]]; then
   echo >&2 "error: version mismatch"
 
   echo "dockefile: $dver"
