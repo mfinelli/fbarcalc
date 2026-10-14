@@ -27,21 +27,28 @@ Currently supported currencies:
 - Euro (EUR: €)
 - British Pound Sterling (GBP: £)
 - Japanese Yen (JPY: ¥)
+- US Dollar (USD: $)
 .fi
 .RE
 
 You'll need an API key from
 .BI freecurrencyapi.com
-in order to perform the conversion. The free tier is quite generous and should
-be more than enough for personal use.
+in order to perform the conversion, unless the input currency is USD. The free
+tier is quite generous and should be more than enough for personal use.
 
 .SH OPTIONS
 .TP
 .BR \-c ", " \-\-config " " \fIFILE\fR
-Provide a custom configuration file.
+Provide a custom configuration file. This can be used with the
+.BR config
+command too.
 .TP
-.BR \-v
-Sets debug verbosity level.
+.BR \-v ", " \-\-verbose
+Show the balance after each transaction, with the maximum marked, and the
+exchange rate that was used for the conversion, so that the result can be
+checked. This applies to the calculation and not to the
+.BR config
+command.
 .TP
 .BR \-h ", " \-\-help
 Prints help menu.
@@ -73,3 +80,9 @@ fbarcalc config
 .RE
 .PP
 Make sure to have your API key ready!
+.PP
+To also see how the maximum was reached:
+.PP
+.RS
+fbarcalc \-\-verbose
+.RE

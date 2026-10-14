@@ -110,6 +110,7 @@ fn prints_help() {
     assert!(o.status.success());
     let out = stdout(&o);
     assert!(out.contains("--config"), "{}", out);
+    assert!(out.contains("--verbose"), "{}", out);
     assert!(out.contains("config"), "{}", out);
 }
 
@@ -216,4 +217,51 @@ fn configuring_refuses_to_overwrite_a_file_that_is_not_toml() {
         stderr(&o)
     );
     assert_eq!(std::fs::read_to_string(&file).unwrap(), original);
+}
+
+#[test]
+fn the_config_file_can_be_given_after_the_subcommand() {
+    let dir = TempDir::new();
+    let file = dir.join("new/dir/config.toml");
+    let o = run(&["config", "-c", file.to_str().unwrap()]);
+
+    // it's understood and gets as far as the (non-interactive) prompt
+    assert_clean_failure(&o);
+    assert!(stderr(&o).contains("TTY"), "{}", stderr(&o));
+    assert!(!dir.join("new").exists());
+}
+
+#[test]
+fn verbose_is_accepted_in_both_forms() {
+    let dir = TempDir::new();
+    let file = dir.file(
+        "config.toml",
+        "default_input_currency = \"USD\"\nfca_api_key = \"k\"\n",
+    );
+
+    for flag in ["-v", "--verbose"] {
+        let o = run_with_config(&file, &[flag]);
+
+        assert_clean_failure(&o);
+        assert!(stderr(&o).contains("TTY"), "{}: {}", flag, stderr(&o));
+    }
+}
+
+#[test]
+fn verbose_does_not_change_how_problems_are_reported() {
+    let dir = TempDir::new();
+    let file = dir.join("missing.toml");
+    let o = run_with_config(&file, &["--verbose"]);
+
+    assert_clean_failure(&o);
+    assert!(stderr(&o).contains("fbarcalc config"), "{}", stderr(&o));
+}
+
+#[test]
+fn verbose_is_not_an_option_of_the_config_subcommand() {
+    let o = run(&["config", "--verbose"]);
+
+    assert_eq!(o.status.code(), Some(2), "stderr: {}", stderr(&o));
+    assert!(stderr(&o).contains("--verbose"), "{}", stderr(&o));
+    assert!(!stderr(&o).contains("panicked"), "{}", stderr(&o));
 }

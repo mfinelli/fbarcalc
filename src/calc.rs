@@ -25,22 +25,93 @@ use std::error::Error;
 use std::io::Write;
 use std::process::ExitCode;
 
+/// The balance of the account at the start and after each transaction, or
+/// `None` if the running total overflows.
+fn running_balances(start: i64, transactions: &[i64]) -> Option<Vec<i64>> {
+    let mut balance = start;
+    let mut balances = Vec::with_capacity(transactions.len() + 1);
+    balances.push(balance);
+
+    for &t in transactions {
+        balance = balance.checked_add(t)?;
+        balances.push(balance);
+    }
+
+    Some(balances)
+}
+
 /// Find the highest balance that the account reaches, including the starting
 /// balance and the balance after each transaction, or `None` if the running
 /// total overflows.
 pub fn max_balance(start: i64, transactions: &[i64]) -> Option<i64> {
-    let mut balance = start;
-    let mut max = start;
-
-    for &t in transactions {
-        balance = balance.checked_add(t)?;
-        max = max.max(balance);
-    }
-
-    Some(max)
+    running_balances(start, transactions)?.into_iter().max()
 }
 
-pub fn calculate(conf: config::Config) -> ExitCode {
+/// The account activity as a table: the balance at the start and after each
+/// transaction, with the balances that are the maximum marked. `None` if the
+/// running total overflows.
+fn audit_trail(
+    symbol: &str,
+    start: i64,
+    transactions: &[i64],
+) -> Option<String> {
+    const HEADER: [&str; 3] = ["#", "Transaction", "Balance"];
+
+    let balances = running_balances(start, transactions)?;
+    let max = balances.iter().copied().max()?;
+
+    let rows: Vec<[String; 3]> = balances
+        .iter()
+        .enumerate()
+        .map(|(i, &balance)| {
+            let transaction = match i.checked_sub(1) {
+                None => String::from("start"),
+                Some(t) => money::format_money(symbol, transactions[t]),
+            };
+
+            [
+                i.to_string(),
+                transaction,
+                money::format_money(symbol, balance),
+            ]
+        })
+        .collect();
+
+    // line up the columns, to the right as they are mostly numbers
+    let widths: Vec<usize> = (0..HEADER.len())
+        .map(|c| {
+            rows.iter()
+                .map(|row| row[c].chars().count())
+                .chain([HEADER[c].chars().count()])
+                .max()
+                .unwrap_or_default()
+        })
+        .collect();
+    let line = |cells: [&str; 3]| {
+        format!(
+            "{:>w0$}  {:>w1$}  {:>w2$}",
+            cells[0],
+            cells[1],
+            cells[2],
+            w0 = widths[0],
+            w1 = widths[1],
+            w2 = widths[2]
+        )
+    };
+
+    let mut lines = vec![line(HEADER)];
+    for (row, &balance) in rows.iter().zip(&balances) {
+        let mut l = line([&row[0], &row[1], &row[2]]);
+        if balance == max {
+            l.push_str("  <- maximum");
+        }
+        lines.push(l);
+    }
+
+    Some(lines.join("\n") + "\n")
+}
+
+pub fn calculate(conf: config::Config, verbose: bool) -> ExitCode {
     let currency = match config::select_input_currency(
         conf.default_input_currency.as_deref(),
         false,
@@ -73,6 +144,7 @@ pub fn calculate(conf: config::Config) -> ExitCode {
         currency,
         start,
         &transactions,
+        verbose,
         || exchange::usd_per_unit(conf.fca_api_key.as_deref(), currency.code),
         &mut std::io::stdout().lock(),
         &mut std::io::stderr().lock(),
@@ -129,17 +201,19 @@ fn prompt_amounts(
 /// Show the result. Anything that goes wrong is reported on `err` and results
 /// in a failure exit code.
 ///
-/// The exchange rate (the value of one unit of the currency in USD) is only
-/// looked up once we have something to convert.
+/// If `verbose` the balance after each transaction and the exchange rate that
+/// was used are shown as well. The exchange rate (the value of one unit of the
+/// currency in USD) is only looked up once we have something to convert.
 pub fn report(
     currency: &config::Currency,
     start: i64,
     transactions: &[i64],
+    verbose: bool,
     rate: impl FnOnce() -> Result<f64, exchange::RateError>,
     out: &mut impl Write,
     err: &mut impl Write,
 ) -> ExitCode {
-    match write_report(currency, start, transactions, rate, out) {
+    match write_report(currency, start, transactions, verbose, rate, out) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             // if we can't even write the error there's nothing else to do
@@ -153,13 +227,22 @@ fn write_report(
     currency: &config::Currency,
     start: i64,
     transactions: &[i64],
+    verbose: bool,
     rate: impl FnOnce() -> Result<f64, exchange::RateError>,
     out: &mut impl Write,
 ) -> Result<(), Box<dyn Error>> {
-    let max = max_balance(start, transactions)
-        .ok_or("the account balance is too large to calculate")?;
+    const TOO_LARGE: &str = "the account balance is too large to calculate";
+
+    let max = max_balance(start, transactions).ok_or(TOO_LARGE)?;
 
     writeln!(out)?;
+
+    if verbose {
+        let trail = audit_trail(currency.symbol, start, transactions)
+            .ok_or(TOO_LARGE)?;
+        writeln!(out, "{}", trail)?;
+    }
+
     writeln!(
         out,
         "Maximum value in {}: {}",
@@ -170,6 +253,11 @@ fn write_report(
     // the maximum is the important part so show it before we try to convert
     // it, that way it's not lost if the exchange rate lookup fails
     let rate = rate()?;
+
+    // there's nothing to say about the rate when it's USD to USD
+    if verbose && currency.code != "USD" {
+        writeln!(out, "Exchange rate: 1 {} = {} USD", currency.code, rate)?;
+    }
 
     writeln!(
         out,
@@ -270,6 +358,7 @@ mod tests {
             currency(code),
             start,
             transactions,
+            false,
             move || rate,
             &mut out,
             &mut err,
@@ -373,6 +462,7 @@ mod tests {
             currency("EUR"),
             100,
             &[100, -50],
+            false,
             || {
                 calls.set(calls.get() + 1);
                 Ok(1.0)
@@ -393,6 +483,7 @@ mod tests {
             currency("EUR"),
             i64::MAX,
             &[1],
+            false,
             rate_must_not_be_requested,
             &mut out,
             &mut err,
@@ -414,6 +505,7 @@ mod tests {
             currency("EUR"),
             100,
             &[],
+            false,
             rate_must_not_be_requested,
             &mut ClosedPipe,
             &mut err,
@@ -429,11 +521,288 @@ mod tests {
             currency("EUR"),
             i64::MAX,
             &[1],
+            false,
             rate_must_not_be_requested,
             &mut Vec::new(),
             &mut ClosedPipe,
         );
 
         assert_eq!(exit, ExitCode::FAILURE);
+    }
+
+    // running balances
+
+    #[test]
+    fn the_running_balances_start_with_the_starting_balance() {
+        assert_eq!(running_balances(500, &[]), Some(vec![500]));
+        assert_eq!(
+            running_balances(500, &[100, -300, 50]),
+            Some(vec![500, 600, 300, 350])
+        );
+        assert_eq!(running_balances(-5, &[10]), Some(vec![-5, 5]));
+    }
+
+    #[test]
+    fn the_running_balances_report_overflow() {
+        assert_eq!(running_balances(i64::MAX, &[1]), None);
+        assert_eq!(running_balances(0, &[i64::MIN, -1]), None);
+    }
+
+    // audit trail
+
+    #[test]
+    fn the_audit_trail_shows_each_balance_and_marks_the_maximum() {
+        let expected = [
+            "#  Transaction  Balance",
+            "0        start    €8.20",
+            "1       -€0.10    €8.10",
+            "2       €19.99   €28.09  <- maximum",
+        ]
+        .join("\n")
+            + "\n";
+
+        assert_eq!(audit_trail("€", 820, &[-10, 1999]), Some(expected));
+    }
+
+    #[test]
+    fn the_audit_trail_marks_every_balance_that_is_the_maximum() {
+        let expected = [
+            "#  Transaction  Balance",
+            "0        start    $1.00",
+            "1        $1.00    $2.00  <- maximum",
+            "2       -$1.00    $1.00",
+            "3        $1.00    $2.00  <- maximum",
+        ]
+        .join("\n")
+            + "\n";
+
+        assert_eq!(audit_trail("$", 100, &[100, -100, 100]), Some(expected));
+    }
+
+    #[test]
+    fn the_audit_trail_with_no_transactions_is_just_the_start() {
+        let expected = [
+            "#  Transaction  Balance",
+            "0        start    $5.00  <- maximum",
+        ]
+        .join("\n")
+            + "\n";
+
+        assert_eq!(audit_trail("$", 500, &[]), Some(expected));
+    }
+
+    #[test]
+    fn the_audit_trail_handles_negative_balances() {
+        let expected = [
+            "#  Transaction  Balance",
+            "0        start   -£5.00",
+            "1       -£1.00   -£6.00",
+            "2        £3.00   -£3.00  <- maximum",
+        ]
+        .join("\n")
+            + "\n";
+
+        assert_eq!(audit_trail("£", -500, &[-100, 300]), Some(expected));
+    }
+
+    #[test]
+    fn the_audit_trail_widens_the_number_column_for_many_transactions() {
+        let transactions = [100; 11];
+        let trail = audit_trail("$", 0, &transactions).unwrap();
+        let lines: Vec<&str> = trail.lines().collect();
+
+        assert_eq!(lines.len(), 13);
+        assert_eq!(lines[0], " #  Transaction  Balance");
+        assert!(lines[1].starts_with(" 0  "), "{}", lines[1]);
+        assert!(lines[10].starts_with(" 9  "), "{}", lines[10]);
+        assert!(lines[12].starts_with("11  "), "{}", lines[12]);
+        assert!(lines[12].ends_with("$11.00  <- maximum"), "{}", lines[12]);
+    }
+
+    #[test]
+    fn the_audit_trail_lines_up_whatever_the_size_of_the_amounts() {
+        let trail =
+            audit_trail("¥", 123_456_789, &[-5, 100_000_000_000, -1]).unwrap();
+
+        // everything but the marker is the same width: one char per
+        // character even for the multi-byte symbol
+        let widths: Vec<usize> = trail
+            .lines()
+            .map(|l| l.trim_end_matches("  <- maximum").chars().count())
+            .collect();
+        assert!(widths.windows(2).all(|w| w[0] == w[1]), "{:?}", widths);
+        assert!(trail.contains("¥1000000000.00"), "{}", trail);
+        assert!(trail.contains("¥1001234567.84  <- maximum"), "{}", trail);
+    }
+
+    #[test]
+    fn the_audit_trail_has_no_trailing_whitespace() {
+        let trail = audit_trail("$", 100, &[50, -25]).unwrap();
+
+        assert!(trail.ends_with('\n') && !trail.ends_with("\n\n"));
+        for line in trail.lines() {
+            assert_eq!(line, line.trim_end());
+        }
+    }
+
+    #[test]
+    fn the_audit_trail_reports_overflow() {
+        assert_eq!(audit_trail("$", i64::MAX, &[1]), None);
+    }
+
+    // verbose report
+
+    fn run_verbose_report(
+        code: &str,
+        start: i64,
+        transactions: &[i64],
+        rate: Result<f64, exchange::RateError>,
+    ) -> (String, String, ExitCode) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let exit = report(
+            currency(code),
+            start,
+            transactions,
+            true,
+            move || rate,
+            &mut out,
+            &mut err,
+        );
+
+        (
+            String::from_utf8(out).unwrap(),
+            String::from_utf8(err).unwrap(),
+            exit,
+        )
+    }
+
+    #[test]
+    fn the_verbose_report_shows_the_trail_and_the_rate_used() {
+        // 28.09 EUR is 35.11 USD at 1 EUR = 1.25 USD
+        let (out, err, exit) =
+            run_verbose_report("EUR", 820, &[-10, 1999], Ok(1.25));
+
+        let expected = [
+            "",
+            "#  Transaction  Balance",
+            "0        start    €8.20",
+            "1       -€0.10    €8.10",
+            "2       €19.99   €28.09  <- maximum",
+            "",
+            "Maximum value in EUR: €28.09",
+            "Exchange rate: 1 EUR = 1.25 USD",
+            "Maximum value in USD: $35.11",
+        ]
+        .join("\n")
+            + "\n";
+
+        assert_eq!(out, expected);
+        assert_eq!(err, "");
+        assert_eq!(exit, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn the_verbose_report_for_usd_has_no_exchange_rate() {
+        let (out, err, exit) = run_verbose_report("USD", 1000, &[500], Ok(1.0));
+
+        let expected = [
+            "",
+            "#  Transaction  Balance",
+            "0        start   $10.00",
+            "1        $5.00   $15.00  <- maximum",
+            "",
+            "Maximum value in USD: $15.00",
+            "Maximum value in USD: $15.00",
+        ]
+        .join("\n")
+            + "\n";
+
+        assert_eq!(out, expected);
+        assert_eq!(err, "");
+        assert_eq!(exit, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn the_verbose_report_shows_the_exact_rate_that_was_used() {
+        // the value that the conversion is done with and not a rounded one
+        let (out, _, _) =
+            run_verbose_report("GBP", 100, &[], Ok(1.0869565217391304));
+
+        assert!(
+            out.contains("Exchange rate: 1 GBP = 1.0869565217391304 USD\n"),
+            "{}",
+            out
+        );
+    }
+
+    #[test]
+    fn the_verbose_report_keeps_the_trail_if_the_rate_cant_be_found() {
+        let (out, err, exit) = run_verbose_report(
+            "EUR",
+            820,
+            &[-10, 1999],
+            Err(exchange::RateError::MissingApiKey),
+        );
+
+        let expected = [
+            "",
+            "#  Transaction  Balance",
+            "0        start    €8.20",
+            "1       -€0.10    €8.10",
+            "2       €19.99   €28.09  <- maximum",
+            "",
+            "Maximum value in EUR: €28.09",
+        ]
+        .join("\n")
+            + "\n";
+
+        assert_eq!(out, expected);
+        assert!(err.starts_with("error: no API key"), "{}", err);
+        assert_eq!(exit, ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn the_verbose_report_reports_overflow_before_showing_anything() {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+
+        let exit = report(
+            currency("EUR"),
+            i64::MAX,
+            &[1],
+            true,
+            rate_must_not_be_requested,
+            &mut out,
+            &mut err,
+        );
+
+        assert_eq!(out, b"");
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "error: the account balance is too large to calculate\n"
+        );
+        assert_eq!(exit, ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn verbose_only_adds_to_the_normal_report() {
+        for (code, start, transactions, rate) in [
+            ("EUR", 820, &[-10, 1999][..], 1.25),
+            ("USD", 1000, &[500][..], 1.0),
+            ("JPY", -500, &[-100][..], 0.5),
+            ("GBP", 0, &[][..], 1.3),
+        ] {
+            let (plain, _, _) = run_report(code, start, transactions, Ok(rate));
+            let (verbose, _, _) =
+                run_verbose_report(code, start, transactions, Ok(rate));
+
+            let summary = |s: &str| -> Vec<String> {
+                s.lines()
+                    .filter(|l| l.starts_with("Maximum value"))
+                    .map(String::from)
+                    .collect()
+            };
+            assert_eq!(summary(&plain), summary(&verbose), "{}", code);
+            assert!(verbose.len() > plain.len(), "{}", code);
+        }
     }
 }

@@ -25,7 +25,7 @@ fn main() -> ExitCode {
     match &cli.command {
         Some(cli::Commands::Config {}) => config::configure(cli.config),
         None => match config::get_config(cli.config) {
-            Ok(c) => calc::calculate(c),
+            Ok(c) => calc::calculate(c, cli.verbose),
             Err(e) => {
                 eprintln!("error: {}", e);
                 ExitCode::FAILURE
