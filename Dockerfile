@@ -18,9 +18,7 @@ LABEL org.opencontainers.image.url=https://github.com/mfinelli/fbarcalc
 LABEL org.opencontainers.image.source=https://github.com/mfinelli/fbarcalc
 LABEL org.opencontainers.image.licenses=GPL-3.0-or-later
 
-RUN useradd -r -U -m fbarcalc \
-  && mkdir /home/fbarcalc/.config \
-  && chown fbarcalc:fbarcalc /home/fbarcalc/.config
+RUN useradd -r -U -m fbarcalc
 RUN apt-get update && apt-get install -y ca-certificates \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY --from=source /fbarcalc /usr/src/fbarcalc

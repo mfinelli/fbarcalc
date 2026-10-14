@@ -38,20 +38,18 @@ pub fn max_balance(start: i64, transactions: &[i64]) -> Option<i64> {
 }
 
 pub fn calculate(conf: config::Config) -> ExitCode {
-    let currency_code = match conf.default_input_currency {
-        None => config::select_input_currency(None, false).unwrap().code,
-        Some(c) => {
-            config::select_input_currency(Some(c.as_str()), false)
-                .unwrap()
-                .code
+    let currency = match config::select_input_currency(
+        conf.default_input_currency.as_deref(),
+        false,
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return ExitCode::FAILURE;
         }
     };
-
-    let currency_symbol = config::SUPPORTED_CURRENCIES
-        .iter()
-        .find(|c| c.code == currency_code)
-        .unwrap()
-        .symbol;
+    let currency_code = currency.code;
+    let currency_symbol = currency.symbol;
 
     // don't make the user type in all of their transactions only to find out
     // at the end that we can't convert the result
@@ -82,7 +80,10 @@ pub fn calculate(conf: config::Config) -> ExitCode {
 
     let start = match amount.prompt() {
         Ok(v) => v,
-        Err(e) => panic!("{:?}", e),
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return ExitCode::FAILURE;
+        }
     };
 
     let mut transactions = Vec::new();
@@ -109,7 +110,10 @@ pub fn calculate(conf: config::Config) -> ExitCode {
         match p.prompt() {
             Ok(Some(v)) => transactions.push(v),
             Ok(None) => break,
-            Err(e) => panic!("{:?}", e),
+            Err(e) => {
+                eprintln!("error: {}", e);
+                return ExitCode::FAILURE;
+            }
         }
     }
 
