@@ -7,16 +7,22 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
 jobs:
   main:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
+    strategy:
+      matrix:
+        os: [macos, ubuntu]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/cache@v6
         with:
           path: ~/.cargo/registry
-          key: cargo-linux-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ matrix.os }}-${{ hashFiles('**/Cargo.lock') }}
       - run: |
           rustc --version
           cargo --version
@@ -32,29 +38,14 @@ jobs:
         if: matrix.os == 'ubuntu'
         with:
           name: crate
-          path: target/package/**/*.crate
+          path: target/package/tmp-crate/*.crate
           retention-days: 1
       - run: ./vcheck.bash
-
-  main-macos:
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/cache@v6
-        with:
-          path: ~/.cargo/registry
-          key: cargo-macos-${{ hashFiles('**/Cargo.lock') }}
-      - run: |
-          rustc --version
-          cargo --version
-      - run: cargo test --locked
-      - run: cargo build --locked --release --verbose
 
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    needs: [main, main-macos]
+    needs: [main]
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -91,15 +82,54 @@ jobs:
           short-description: ${{ github.event.repository.description }}
 
   release:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 15
-    needs: [main, main-macos, docker]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [docker]
     permissions:
       contents: write
+      id-token: write
+    strategy:
+      matrix:
+        os: [macos, ubuntu]
     steps:
+      - name: Set OS name
+        id: os
+        run: >-
+          echo "name=$(echo $RUNNER_OS | tr '[:upper:]' '[:lower:]')" >>
+          $GITHUB_OUTPUT
+      - name: Set arch
+        id: arch
+        run: |
+          ARCH=$(uname -m)
+          case $ARCH in
+            x86_64)  echo "name=amd64" >> $GITHUB_OUTPUT ;;
+            aarch64) echo "name=arm64" >> $GITHUB_OUTPUT ;;
+            arm64)   echo "name=arm64" >> $GITHUB_OUTPUT ;;
+            *)       echo "name=$ARCH" >> $GITHUB_OUTPUT ;;
+          esac
+      - name: Set ref name
+        id: ref
+        run: echo "name=${GITHUB_REF_NAME%%/*}" >> $GITHUB_OUTPUT
+      - name: Set archive name
+        id: archive
+        run: |
+          NAME="fbarcalc"
+          NAME="${NAME}_${{ steps.ref.outputs.name }}"
+          NAME="${NAME}_${{ steps.os.outputs.name }}"
+          NAME="${NAME}_${{ steps.arch.outputs.name }}"
+          NAME="${NAME}.tar.zst"
+          echo "name=${NAME}" >> $GITHUB_OUTPUT
+      - name: Set tar
+        id: tar
+        run: |
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            echo "cmd=gtar" >> $GITHUB_OUTPUT
+          else
+            echo "cmd=tar" >> $GITHUB_OUTPUT
+          fi
       - uses: actions/checkout@v7
       - uses: crazy-max/ghaction-import-gpg@v7
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
@@ -107,43 +137,26 @@ jobs:
       - run: cargo doc --frozen --no-deps --release
       - run: cargo build --frozen --release
       - run: |
-          cp target/release/fbarcalc .
-          cp -r target/doc .
-          rm -rfv doc/.lock
-          tar acvf fbarcalc_${{ github.ref_name }}_linux_amd64.tar.zst \
-            Cargo.{lock,toml} CHANGELOG.md LICENSE README.md doc fbarcalc \
-            fbarcalc.1 src vendor
-          gpg -ba fbarcalc_${{ github.ref_name }}_linux_amd64.tar.zst
-      - uses: ncipollo/release-action@v1
-        with:
-          artifacts: fbarcalc_*.tar.*
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  release-macos:
-    runs-on: macos-latest
-    timeout-minutes: 15
-    needs: [release]
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: crazy-max/ghaction-import-gpg@v7
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_PASSPHRASE }}
-      - run: cargo vendor --locked
-      - run: cargo doc --frozen --no-deps --release
-      - run: cargo build --frozen --release
+          mkdir dist
+          cp target/release/fbarcalc dist
+          cp fbarcalc.1 Cargo.{lock,toml} README.md CHANGELOG.md LICENSE dist
+          cp -r target/doc dist/
+          rm -rfv dist/doc/.lock
+          cp -r src dist/
+          cp -r vendor dist/
       - run: |
-          cp target/release/fbarcalc .
-          cp -r target/doc .
-          rm -rfv doc/.lock
-          tar acvf fbarcalc_${{ github.ref_name }}_macos_arm64.tar.zst \
-            Cargo.{lock,toml} CHANGELOG.md LICENSE README.md doc fbarcalc \
-            fbarcalc.1 src vendor
-          gpg -ba fbarcalc_${{ github.ref_name }}_macos_arm64.tar.zst
+          cd dist
+          ${{ steps.tar.outputs.cmd }} --owner=0 --group=0 --sort=name -acvf \
+            ../${{ steps.archive.outputs.name }} *
+      - run: gpg -ba ${{ steps.archive.outputs.name }}
+        if: startsWith(github.ref, 'refs/tags/')
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release_${{ matrix.os }}
+          path: "*.tar.zst"
+          retention-days: 1
       - uses: ncipollo/release-action@v1
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           allowUpdates: true
           artifacts: fbarcalc_*.tar.*
