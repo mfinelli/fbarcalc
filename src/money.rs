@@ -86,6 +86,18 @@ pub fn parse_amount(input: &str) -> Result<i64, ParseAmountError> {
     Ok(if negative { -cents } else { cents })
 }
 
+/// Like [`parse_amount`] but a blank input is `None`. This is how the user
+/// says that there are no more amounts.
+pub fn parse_optional_amount(
+    input: &str,
+) -> Result<Option<i64>, ParseAmountError> {
+    if input.trim().is_empty() {
+        Ok(None)
+    } else {
+        parse_amount(input).map(Some)
+    }
+}
+
 /// Format an amount of cents with its currency symbol, e.g. `$12.34`. The
 /// sign goes in front of the symbol: `-$12.34`.
 pub fn format_money(symbol: &str, cents: i64) -> String {
@@ -238,5 +250,45 @@ mod tests {
         assert_eq!(convert_cents(1, 0.6), 1);
         assert_eq!(convert_cents(-1_000, 1.1), -1_100);
         assert_eq!(convert_cents(0, 1.23), 0);
+    }
+
+    #[test]
+    fn blank_input_means_there_are_no_more_amounts() {
+        for input in ["", " ", "   ", "\t", " \t "] {
+            assert_eq!(parse_optional_amount(input), Ok(None), "{:?}", input);
+        }
+    }
+
+    #[test]
+    fn optional_amounts_are_parsed_like_other_amounts() {
+        assert_eq!(parse_optional_amount("12.34"), Ok(Some(1234)));
+        assert_eq!(parse_optional_amount("-0.5"), Ok(Some(-50)));
+        assert_eq!(parse_optional_amount(" 8.2 "), Ok(Some(820)));
+        assert_eq!(
+            parse_optional_amount("abc"),
+            Err(ParseAmountError::Invalid)
+        );
+        assert_eq!(
+            parse_optional_amount("99999999999999999999"),
+            Err(ParseAmountError::OutOfRange)
+        );
+    }
+
+    #[test]
+    fn zero_is_an_amount_not_the_end() {
+        assert_eq!(parse_optional_amount("0"), Ok(Some(0)));
+        assert_eq!(parse_optional_amount("-0.00"), Ok(Some(0)));
+    }
+
+    #[test]
+    fn parse_errors_describe_the_problem() {
+        assert_eq!(ParseAmountError::Invalid.to_string(), "invalid amount");
+        assert_eq!(
+            ParseAmountError::OutOfRange.to_string(),
+            "amount out of range"
+        );
+
+        let boxed: Box<dyn Error> = Box::new(ParseAmountError::Invalid);
+        assert_eq!(boxed.to_string(), "invalid amount");
     }
 }

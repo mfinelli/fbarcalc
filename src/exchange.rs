@@ -445,6 +445,41 @@ mod tests {
         }
     }
 
+    #[test]
+    fn error_messages_describe_the_problem() {
+        assert_eq!(
+            RateError::InvalidResponse.to_string(),
+            "the exchange rate API returned an unexpected reply"
+        );
+        assert_eq!(
+            RateError::InvalidRate(0.0).to_string(),
+            "the exchange rate API returned an invalid rate: 0"
+        );
+        assert_eq!(
+            RateError::InvalidRate(-0.5).to_string(),
+            "the exchange rate API returned an invalid rate: -0.5"
+        );
+    }
+
+    #[test]
+    fn only_request_errors_have_an_underlying_cause() {
+        let request =
+            usd_per_unit_from(UNREACHABLE, Some("k"), "EUR").unwrap_err();
+        assert!(request.source().is_some());
+
+        for e in [
+            RateError::MissingApiKey,
+            RateError::InvalidResponse,
+            RateError::InvalidRate(0.0),
+            RateError::Status {
+                code: 500,
+                message: None,
+            },
+        ] {
+            assert!(e.source().is_none(), "{:?}", e);
+        }
+    }
+
     /// Start a one-shot HTTP server on a local port. It answers the first
     /// request with the given response and then returns the raw text of that
     /// request (through the join handle) so that it can be inspected.

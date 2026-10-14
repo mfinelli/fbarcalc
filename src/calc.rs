@@ -18,8 +18,11 @@
 use crate::config;
 use crate::exchange;
 use crate::money;
+use inquire::error::InquireError;
 use inquire::ui::RenderConfig;
 use inquire::CustomType;
+use std::error::Error;
+use std::io::Write;
 use std::process::ExitCode;
 
 /// Find the highest balance that the account reaches, including the starting
@@ -48,19 +51,39 @@ pub fn calculate(conf: config::Config) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let currency_code = currency.code;
-    let currency_symbol = currency.symbol;
 
     // don't make the user type in all of their transactions only to find out
     // at the end that we can't convert the result
     if let Err(e) =
-        exchange::ensure_configured(conf.fca_api_key.as_deref(), currency_code)
+        exchange::ensure_configured(conf.fca_api_key.as_deref(), currency.code)
     {
         eprintln!("error: {}", e);
         return ExitCode::FAILURE;
     }
 
-    let format = |cents: i64| money::format_money(currency_symbol, cents);
+    let (start, transactions) = match prompt_amounts(currency) {
+        Ok(amounts) => amounts,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return ExitCode::FAILURE;
+        }
+    };
+
+    report(
+        currency,
+        start,
+        &transactions,
+        || exchange::usd_per_unit(conf.fca_api_key.as_deref(), currency.code),
+        &mut std::io::stdout().lock(),
+        &mut std::io::stderr().lock(),
+    )
+}
+
+/// Ask for the starting value and then each of the transactions.
+fn prompt_amounts(
+    currency: &config::Currency,
+) -> Result<(i64, Vec<i64>), InquireError> {
+    let format = |cents: i64| money::format_money(currency.symbol, cents);
     let format_optional =
         |cents: Option<i64>| cents.map(format).unwrap_or_default();
 
@@ -78,14 +101,7 @@ pub fn calculate(conf: config::Config) -> ExitCode {
         render_config: RenderConfig::default(),
     };
 
-    let start = match amount.prompt() {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return ExitCode::FAILURE;
-        }
-    };
-
+    let start = amount.prompt()?;
     let mut transactions = Vec::new();
 
     loop {
@@ -99,58 +115,69 @@ pub fn calculate(conf: config::Config) -> ExitCode {
             placeholder: Some("12.34"),
             error_message: "Please enter a valid amount or empty to finish.".into(),
             help_message: "Do not use the currency symbol and the number should use dots as the decimal separator. Enter an empty value to finish.".into(),
-            parser: &|i| if i.trim().is_empty() {
-                Ok(None)
-            } else {
-                money::parse_amount(i).map(Some).map_err(|_| ())
-            },
+            parser: &|i| money::parse_optional_amount(i).map_err(|_| ()),
             render_config: RenderConfig::default(),
         };
 
-        match p.prompt() {
-            Ok(Some(v)) => transactions.push(v),
-            Ok(None) => break,
-            Err(e) => {
-                eprintln!("error: {}", e);
-                return ExitCode::FAILURE;
-            }
+        match p.prompt()? {
+            Some(v) => transactions.push(v),
+            None => return Ok((start, transactions)),
         }
     }
+}
 
-    let max = match max_balance(start, &transactions) {
-        Some(m) => m,
-        None => {
-            eprintln!("error: the account balance is too large to calculate");
-            return ExitCode::FAILURE;
+/// Show the result. Anything that goes wrong is reported on `err` and results
+/// in a failure exit code.
+///
+/// The exchange rate (the value of one unit of the currency in USD) is only
+/// looked up once we have something to convert.
+pub fn report(
+    currency: &config::Currency,
+    start: i64,
+    transactions: &[i64],
+    rate: impl FnOnce() -> Result<f64, exchange::RateError>,
+    out: &mut impl Write,
+    err: &mut impl Write,
+) -> ExitCode {
+    match write_report(currency, start, transactions, rate, out) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            // if we can't even write the error there's nothing else to do
+            let _ = writeln!(err, "error: {}", e);
+            ExitCode::FAILURE
         }
-    };
+    }
+}
 
-    println!();
-    println!(
+fn write_report(
+    currency: &config::Currency,
+    start: i64,
+    transactions: &[i64],
+    rate: impl FnOnce() -> Result<f64, exchange::RateError>,
+    out: &mut impl Write,
+) -> Result<(), Box<dyn Error>> {
+    let max = max_balance(start, transactions)
+        .ok_or("the account balance is too large to calculate")?;
+
+    writeln!(out)?;
+    writeln!(
+        out,
         "Maximum value in {}: {}",
-        currency_code,
-        money::format_money(currency_symbol, max)
-    );
+        currency.code,
+        money::format_money(currency.symbol, max)
+    )?;
 
     // the maximum is the important part so show it before we try to convert
     // it, that way it's not lost if the exchange rate lookup fails
-    let exchange_rate = match exchange::usd_per_unit(
-        conf.fca_api_key.as_deref(),
-        currency_code,
-    ) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("error: {}", e);
-            return ExitCode::FAILURE;
-        }
-    };
+    let rate = rate()?;
 
-    println!(
+    writeln!(
+        out,
         "Maximum value in USD: {}",
-        money::format_money("$", money::convert_cents(max, exchange_rate))
-    );
+        money::format_money("$", money::convert_cents(max, rate))
+    )?;
 
-    ExitCode::SUCCESS
+    Ok(())
 }
 
 #[cfg(test)]
@@ -219,5 +246,194 @@ mod tests {
 
         // 10.00 start, 18.20, 18.10, 38.09, 8.09
         assert_eq!(max_balance(1000, &amounts), Some(3809));
+    }
+
+    // report
+
+    fn currency(code: &str) -> &'static config::Currency {
+        config::SUPPORTED_CURRENCIES
+            .iter()
+            .find(|c| c.code == code)
+            .unwrap()
+    }
+
+    /// Run a report that is able to get the given exchange rate and return
+    /// what it wrote to stdout, what it wrote to stderr, and its exit code.
+    fn run_report(
+        code: &str,
+        start: i64,
+        transactions: &[i64],
+        rate: Result<f64, exchange::RateError>,
+    ) -> (String, String, ExitCode) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let exit = report(
+            currency(code),
+            start,
+            transactions,
+            move || rate,
+            &mut out,
+            &mut err,
+        );
+
+        (
+            String::from_utf8(out).unwrap(),
+            String::from_utf8(err).unwrap(),
+            exit,
+        )
+    }
+
+    /// A writer that can't be written to, like a closed pipe.
+    struct ClosedPipe;
+
+    impl Write for ClosedPipe {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "pipe closed",
+            ))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn rate_must_not_be_requested() -> Result<f64, exchange::RateError> {
+        panic!("the exchange rate shouldn't have been requested");
+    }
+
+    #[test]
+    fn the_report_shows_the_maximum_in_the_currency_and_in_usd() {
+        // 8.20, 8.10, 28.09 and 1 EUR is 2 USD
+        let (out, err, exit) = run_report("EUR", 820, &[-10, 1999], Ok(2.0));
+
+        assert_eq!(
+            out,
+            "\nMaximum value in EUR: €28.09\nMaximum value in USD: $56.18\n"
+        );
+        assert_eq!(err, "");
+        assert_eq!(exit, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn the_report_for_usd_shows_the_same_value_twice() {
+        let (out, err, exit) = run_report("USD", 1000, &[500], Ok(1.0));
+
+        assert_eq!(
+            out,
+            "\nMaximum value in USD: $15.00\nMaximum value in USD: $15.00\n"
+        );
+        assert_eq!(err, "");
+        assert_eq!(exit, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn the_report_converts_to_the_nearest_cent() {
+        // 3 pence is 4.5 cents
+        let (out, _, _) = run_report("GBP", 3, &[], Ok(1.5));
+        assert!(out.ends_with("Maximum value in USD: $0.05\n"), "{}", out);
+    }
+
+    #[test]
+    fn the_report_handles_a_negative_maximum() {
+        let (out, err, exit) = run_report("JPY", -500, &[-100], Ok(0.5));
+
+        assert_eq!(
+            out,
+            "\nMaximum value in JPY: -¥5.00\nMaximum value in USD: -$2.50\n"
+        );
+        assert_eq!(err, "");
+        assert_eq!(exit, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn the_maximum_is_still_shown_if_the_rate_cant_be_found() {
+        let (out, err, exit) = run_report(
+            "EUR",
+            820,
+            &[-10, 1999],
+            Err(exchange::RateError::MissingApiKey),
+        );
+
+        assert_eq!(out, "\nMaximum value in EUR: €28.09\n");
+        assert_eq!(
+            err,
+            "error: no API key is configured, run `fbarcalc config` to set \
+             one\n"
+        );
+        assert_eq!(exit, ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn the_rate_is_requested_exactly_once() {
+        let calls = std::cell::Cell::new(0);
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+
+        let exit = report(
+            currency("EUR"),
+            100,
+            &[100, -50],
+            || {
+                calls.set(calls.get() + 1);
+                Ok(1.0)
+            },
+            &mut out,
+            &mut err,
+        );
+
+        assert_eq!(calls.get(), 1);
+        assert_eq!(exit, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn an_overflowing_balance_is_reported_before_anything_else() {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+
+        let exit = report(
+            currency("EUR"),
+            i64::MAX,
+            &[1],
+            rate_must_not_be_requested,
+            &mut out,
+            &mut err,
+        );
+
+        assert_eq!(out, b"");
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "error: the account balance is too large to calculate\n"
+        );
+        assert_eq!(exit, ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn a_closed_stdout_is_an_error_instead_of_a_panic() {
+        let mut err = Vec::new();
+
+        let exit = report(
+            currency("EUR"),
+            100,
+            &[],
+            rate_must_not_be_requested,
+            &mut ClosedPipe,
+            &mut err,
+        );
+
+        assert_eq!(String::from_utf8(err).unwrap(), "error: pipe closed\n");
+        assert_eq!(exit, ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn a_closed_stderr_is_not_a_panic_either() {
+        let exit = report(
+            currency("EUR"),
+            i64::MAX,
+            &[1],
+            rate_must_not_be_requested,
+            &mut Vec::new(),
+            &mut ClosedPipe,
+        );
+
+        assert_eq!(exit, ExitCode::FAILURE);
     }
 }

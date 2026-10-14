@@ -325,11 +325,23 @@ fn run_configure(config: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
         .without_confirmation()
         .prompt()?;
 
-    let updated = update_config_doc(&existing, currency.code, Some(&key))
-        .map_err(in_file(&config_file))?;
-    write_config(&config_file, &updated)?;
+    save_config(&config_file, &existing, currency.code, &key)?;
 
     Ok(())
+}
+
+/// Update the existing contents of the config file with the answers that we
+/// got and write them back.
+fn save_config(
+    config_file: &Path,
+    existing: &str,
+    currency_code: &str,
+    api_key: &str,
+) -> Result<(), ConfigError> {
+    let updated = update_config_doc(existing, currency_code, Some(api_key))
+        .map_err(in_file(config_file))?;
+
+    write_config(config_file, &updated)
 }
 
 #[cfg(test)]
@@ -764,5 +776,107 @@ default_input_currency = \"EUR\"
         assert!(create_config_directory(Path::new("config.toml")).is_ok());
         assert!(create_config_directory(Path::new("./config.toml")).is_ok());
         assert!(create_config_directory(Path::new("/")).is_ok());
+    }
+
+    // error reporting
+
+    #[test]
+    fn a_missing_config_directory_suggests_choosing_a_file() {
+        let msg = ConfigError::NoConfigDir.to_string();
+        assert!(msg.contains("--config"), "{}", msg);
+    }
+
+    #[test]
+    fn errors_know_their_underlying_cause() {
+        let io = ConfigError::Io(std::io::Error::other("disk on fire"));
+        assert_eq!(io.source().unwrap().to_string(), "disk on fire");
+
+        let parse = parse_config("not toml").unwrap_err();
+        assert!(matches!(parse, ConfigError::Parse(_)));
+        assert!(parse.source().is_some());
+
+        let file = ConfigError::File {
+            path: PathBuf::from("c.toml"),
+            source: Box::new(ConfigError::NotFound),
+        };
+        assert_eq!(
+            file.to_string(),
+            format!("c.toml: {}", ConfigError::NotFound)
+        );
+        assert_eq!(
+            file.source().unwrap().to_string(),
+            ConfigError::NotFound.to_string()
+        );
+
+        for e in [
+            ConfigError::NoConfigDir,
+            ConfigError::NotFound,
+            ConfigError::WrongType {
+                key: "version",
+                expected: "an integer",
+            },
+        ] {
+            assert!(e.source().is_none(), "{:?}", e);
+        }
+    }
+
+    // saving the answers
+
+    #[test]
+    fn saving_creates_a_new_config() {
+        let dir = TempDir::new();
+        let file = dir.join("fbarcalc/config.toml");
+
+        save_config(&file, "", "GBP", "abc123").unwrap();
+
+        let c = get_config(Some(file)).unwrap();
+        assert_eq!(c.version, CONFIG_VERSION);
+        assert_eq!(c.default_input_currency.as_deref(), Some("GBP"));
+        assert_eq!(c.fca_api_key.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn saving_updates_an_existing_config_and_keeps_the_rest() {
+        let dir = TempDir::new();
+        let file = dir.join("config.toml");
+        let existing = "# mine\nfuture = 1\ndefault_input_currency = \"EUR\"\n\
+                        fca_api_key = \"old\"\n";
+        std::fs::write(&file, existing).unwrap();
+
+        // an empty answer for the key keeps the one that we have
+        save_config(&file, existing, "JPY", "").unwrap();
+
+        let saved = std::fs::read_to_string(&file).unwrap();
+        assert!(saved.contains("# mine"), "{}", saved);
+        assert!(saved.contains("future = 1"), "{}", saved);
+
+        let c = parse_config(&saved).unwrap();
+        assert_eq!(c.default_input_currency.as_deref(), Some("JPY"));
+        assert_eq!(c.fca_api_key.as_deref(), Some("old"));
+    }
+
+    #[test]
+    fn saving_reports_which_file_could_not_be_written() {
+        let dir = TempDir::new();
+
+        // the config "file" is a directory
+        let msg = save_config(dir.path(), "", "EUR", "k")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.starts_with(&dir.path().display().to_string()),
+            "{}",
+            msg
+        );
+    }
+
+    #[test]
+    fn saving_refuses_to_replace_a_config_that_is_not_toml() {
+        let dir = TempDir::new();
+        let file = dir.join("config.toml");
+        std::fs::write(&file, "not toml").unwrap();
+
+        assert!(save_config(&file, "not toml", "EUR", "k").is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "not toml");
     }
 }
