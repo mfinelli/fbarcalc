@@ -18,9 +18,9 @@
 use crate::config;
 use crate::exchange;
 use crate::money;
+use inquire::CustomType;
 use inquire::error::InquireError;
 use inquire::ui::RenderConfig;
-use inquire::CustomType;
 use std::error::Error;
 use std::io::Write;
 use std::process::ExitCode;
