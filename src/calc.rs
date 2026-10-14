@@ -16,10 +16,10 @@
  */
 
 use crate::config;
+use crate::exchange;
 use crate::money;
 use inquire::ui::RenderConfig;
 use inquire::CustomType;
-use serde_json::Value;
 use std::process::ExitCode;
 
 /// Find the highest balance that the account reaches, including the starting
@@ -52,6 +52,15 @@ pub fn calculate(conf: config::Config) -> ExitCode {
         .find(|c| c.code == currency_code)
         .unwrap()
         .symbol;
+
+    // don't make the user type in all of their transactions only to find out
+    // at the end that we can't convert the result
+    if let Err(e) =
+        exchange::ensure_configured(conf.fca_api_key.as_deref(), currency_code)
+    {
+        eprintln!("error: {}", e);
+        return ExitCode::FAILURE;
+    }
 
     let format = |cents: i64| money::format_money(currency_symbol, cents);
     let format_optional =
@@ -107,14 +116,10 @@ pub fn calculate(conf: config::Config) -> ExitCode {
     let max = match max_balance(start, &transactions) {
         Some(m) => m,
         None => {
-            println!("error: the account balance is too large to calculate");
+            eprintln!("error: the account balance is too large to calculate");
             return ExitCode::FAILURE;
         }
     };
-
-    // TODO: don't unwrap this, handle if it doesn't exist...
-    let exchange_rate =
-        get_exchange_rate(&conf.fca_api_key.unwrap(), currency_code);
 
     println!();
     println!(
@@ -122,43 +127,26 @@ pub fn calculate(conf: config::Config) -> ExitCode {
         currency_code,
         money::format_money(currency_symbol, max)
     );
+
+    // the maximum is the important part so show it before we try to convert
+    // it, that way it's not lost if the exchange rate lookup fails
+    let exchange_rate = match exchange::usd_per_unit(
+        conf.fca_api_key.as_deref(),
+        currency_code,
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return ExitCode::FAILURE;
+        }
+    };
+
     println!(
         "Maximum value in USD: {}",
         money::format_money("$", money::convert_cents(max, exchange_rate))
     );
 
     ExitCode::SUCCESS
-}
-
-// TODO: we should probably only make this request once per day and then
-// store it in ~/.local/cache...
-fn get_exchange_rate(apikey: &str, currency: &str) -> f64 {
-    static USER_AGENT: &str = concat!(
-        env!("CARGO_PKG_NAME"),
-        "/",
-        env!("CARGO_PKG_VERSION"),
-        " https://github.com/mfinelli/fbarcalc"
-    );
-
-    let client = reqwest::blocking::Client::builder()
-        .gzip(true)
-        .user_agent(USER_AGENT)
-        .build()
-        .unwrap();
-    let body = client
-        .get("https://api.freecurrencyapi.com/v1/latest")
-        .query(&[
-            ("apikey", Some(apikey.to_string())),
-            ("base_currency", Some("USD".to_string())),
-            ("currencies", Some(currency.to_string())),
-        ])
-        .send()
-        .unwrap()
-        .text()
-        .unwrap();
-
-    let v: Value = serde_json::from_str(&body).unwrap();
-    1.0 / v["data"][currency].as_f64().unwrap()
 }
 
 #[cfg(test)]

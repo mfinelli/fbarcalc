@@ -18,4 +18,5 @@
 pub mod calc;
 pub mod cli;
 pub mod config;
+pub mod exchange;
 pub mod money;
