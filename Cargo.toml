@@ -2,17 +2,27 @@
 name = "fbarcalc"
 version = "0.2.0"
 edition = "2024"
+
+categories = ["command-line-utilities", "finance"]
+keywords = ["fbar", "fincen", "tax", "currency", "calculator"]
+license = "GPL-3.0-or-later"
+readme = "README.md"
+repository = "https://github.com/mfinelli/fbarcalc"
+
 description = '''
-fbarcalc Copyright 2024-2026 Mario Finelli
-
-A simple program to help you calculate the maximum account value using a
-starting balance and following all of the transactions.
-
-This program comes with ABSOLUTELY NO WARRANTY; This is free software, and you
-are welcome to redistribute it under certain conditions; Please see the copy
-of the GNU General Public License that you should have recevied along with this
-program for details.
+Calculate the maximum account balance from its transactions, converted to USD,
+for FBAR reports
 '''
+
+include = [
+  "/CHANGELOG.md",
+  "/Cargo.*",
+  "/LICENSE",
+  "/README.md",
+  "/fbarcalc.1",
+  "/src/*",
+  "/tests/*",
+]
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }

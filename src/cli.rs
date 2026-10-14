@@ -18,8 +18,20 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+/// What is shown at the top of the help.
+const ABOUT: &str = "\
+fbarcalc Copyright 2024-2026 Mario Finelli
+
+A simple program to help you calculate the maximum account value using a
+starting balance and following all of the transactions.
+
+This program comes with ABSOLUTELY NO WARRANTY; This is free software, and you
+are welcome to redistribute it under certain conditions; Please see the copy
+of the GNU General Public License that you should have received along with this
+program for details.";
+
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command(version, about = ABOUT, long_about = None)]
 pub struct Cli {
     /// Sets a custom config file
     #[arg(short, long, value_name = "FILE", global = true)]
