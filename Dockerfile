@@ -12,7 +12,7 @@ RUN cargo test
 FROM debian:stable-slim
 
 LABEL org.opencontainers.image.title=fbarcalc
-LABEL org.opencontainers.image.version=1.0.1
+LABEL org.opencontainers.image.version=1.0.2
 LABEL org.opencontainers.image.description="find maximum account value"
 LABEL org.opencontainers.image.url=https://github.com/mfinelli/fbarcalc
 LABEL org.opencontainers.image.source=https://github.com/mfinelli/fbarcalc

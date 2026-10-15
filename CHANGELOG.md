@@ -2,7 +2,7 @@
 
 This document keeps track of major changes to the `fbarcalc` program.
 
-## Unreleased
+## 2026-10-15: v1.0.2
 
 - Fail with an error if the input isn't a terminal. Before, a program started
   with its input redirected would wait for someone to type at the terminal
