@@ -22,9 +22,12 @@
 //! when there is no terminal. In particular none of these situations should
 //! ever panic.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 /// A directory that is removed when it goes out of scope.
 struct TempDir(PathBuf);
@@ -60,13 +63,62 @@ impl Drop for TempDir {
     }
 }
 
-/// Run fbarcalc with no terminal attached to it.
+/// How long to wait for fbarcalc before deciding that it's stuck. Everything
+/// that is tested here takes milliseconds so if it takes longer than this it
+/// is waiting for input.
+const TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Run fbarcalc with nothing to read from (stdin is /dev/null).
+///
+/// This fails the test if the program doesn't finish: a program that is
+/// waiting for the keyboard would otherwise stop the tests from ever
+/// completing, and it does when the tests are run from a terminal.
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_fbarcalc"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fbarcalc"))
         .args(args)
         .stdin(Stdio::null())
-        .output()
-        .unwrap()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    // read the output on other threads so that a full pipe can't stop the
+    // program from finishing
+    let stdout = collect(child.stdout.take().unwrap());
+    let stderr = collect(child.stderr.take().unwrap());
+
+    let deadline = Instant::now() + TIMEOUT;
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!(
+                "fbarcalc {:?} was still running after {:?}, is it waiting \
+                 for input?",
+                args, TIMEOUT
+            );
+        }
+
+        std::thread::sleep(Duration::from_millis(10));
+    };
+
+    Output {
+        status,
+        stdout: stdout.join().unwrap(),
+        stderr: stderr.join().unwrap(),
+    }
+}
+
+fn collect(mut pipe: impl Read + Send + 'static) -> JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = pipe.read_to_end(&mut buf);
+        buf
+    })
 }
 
 fn run_with_config(config: &Path, args: &[&str]) -> Output {

@@ -2,6 +2,12 @@
 
 This document keeps track of major changes to the `fbarcalc` program.
 
+## Unreleased
+
+- Fail with an error if the input isn't a terminal. Before, a program started
+  with its input redirected would wait for someone to type at the terminal
+  that it was started from if there was one, and never finish.
+
 ## 2026-10-15: v1.0.1
 
 Upgrade dependencies to resolve a packaging problem on Arch Linux.

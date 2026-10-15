@@ -22,7 +22,7 @@ use inquire::{Password, Select};
 use std::error::Error;
 use std::fmt;
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::path::PathBuf;
@@ -280,10 +280,28 @@ fn starting_cursor(default: Option<&str>) -> usize {
         .unwrap_or(0)
 }
 
+/// The prompts need a terminal on stdin.
+///
+/// Without this check they would read the keyboard from the controlling
+/// terminal (/dev/tty) whenever stdin isn't a terminal itself, if the process
+/// has one. A program that was started with its input redirected, from a
+/// script, etc. would then wait for someone to type at the terminal that it
+/// was started from instead of failing.
+fn ensure_terminal() -> Result<(), InquireError> {
+    if std::io::stdin().is_terminal() {
+        Ok(())
+    } else {
+        Err(InquireError::NotTTY)
+    }
+}
+
 pub fn select_input_currency(
     default: Option<&str>,
     is_default: bool,
 ) -> Result<&'static Currency, InquireError> {
+    // this is the first prompt of both the calculation and the configuration
+    ensure_terminal()?;
+
     let p = if is_default {
         "What is the default input currency?"
     } else {
