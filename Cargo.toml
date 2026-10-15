@@ -3,16 +3,12 @@ name = "fbarcalc"
 version = "1.0.0"
 edition = "2024"
 
+description = "Calculate maximum account balance for FBAR reports"
 categories = ["command-line-utilities", "finance"]
 keywords = ["fbar", "fincen", "tax", "currency", "calculator"]
 license = "GPL-3.0-or-later"
 readme = "README.md"
 repository = "https://github.com/mfinelli/fbarcalc"
-
-description = '''
-Calculate the maximum account balance from its transactions, converted to USD,
-for FBAR reports
-'''
 
 include = [
   "/CHANGELOG.md",
