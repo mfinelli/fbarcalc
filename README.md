@@ -10,9 +10,12 @@ current exchange rate) USD.
 - https://www.irs.gov/businesses/small-businesses-self-employed/report-of-foreign-bank-and-financial-accounts-fbar
 - https://bsaefiling.fincen.treas.gov/main.html
 
-**N.B.** While you may find this program useful I wrote it for my own personal
-use. I am not an accountant and am not liable for any outcome resulting from
-your usage of the program. You should be using your own, licensed CPA.
+> [!IMPORTANT]
+>
+> **N.B.** While you may find this program useful I wrote it for my own
+> personal use. I am not an accountant and am not liable for any outcome
+> resulting from your usage of the program. You should be using your own,
+> licensed CPA. See the LICENSE for details.
 
 ## usage
 
@@ -48,17 +51,18 @@ maximum marked, and the exchange rate that was used for the conversion, so
 that you can check the numbers:
 
 ```
-#  Transaction   Balance
-0        start  €1500.00
-1      €320.75  €1820.75
-2    -€1200.00   €620.75
-3       €80.10   €700.85
-4     €2000.00  €2700.85  <- maximum
-5     -€450.00  €2250.85
+#  Transaction    Balance
+0        start  €1,500.00
+1      €320.75  €1,820.75
+2   -€1,200.00    €620.75
+3       €80.10    €700.85
+4    €2,000.00  €2,700.85  <- maximum
+5     -€450.00  €2,250.85
 
-Maximum value in EUR: €2700.85
+Final balance in EUR: €2,250.85
+Maximum value in EUR: €2,700.85
 Exchange rate: 1 EUR = 1.0842 USD
-Maximum value in USD: $2928.26
+Maximum value in USD: $2,928.26
 ```
 
 ### docker

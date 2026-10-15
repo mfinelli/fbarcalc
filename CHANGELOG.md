@@ -2,6 +2,13 @@
 
 This document keeps track of major changes to the `fbarcalc` program.
 
+## Unreleased
+
+- Show the final balance after the last transaction, so that it can be
+  compared with the statement that the transactions came from.
+- Show amounts with thousands separators (`1,234.56`) in the prompts as well
+  as in the results.
+
 ## 2026-10-15: v1.0.2
 
 - Fail with an error if the input isn't a terminal. Before, a program started

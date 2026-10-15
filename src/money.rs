@@ -98,12 +98,36 @@ pub fn parse_optional_amount(
     }
 }
 
-/// Format an amount of cents with its currency symbol, e.g. `$12.34`. The
-/// sign goes in front of the symbol: `-$12.34`.
+/// Format an amount of cents with its currency symbol and a comma between
+/// each group of three digits, e.g. `$1,234.56`. The sign goes in front of the
+/// symbol: `-$1,234.56`.
+///
+/// The commas are only for showing amounts: [`parse_amount`] doesn't accept
+/// them because in many places a comma is the decimal separator and `1,234`
+/// would be ambiguous.
 pub fn format_money(symbol: &str, cents: i64) -> String {
     let sign = if cents < 0 { "-" } else { "" };
     let abs = cents.unsigned_abs();
-    format!("{}{}{}.{:02}", sign, symbol, abs / 100, abs % 100)
+    format!(
+        "{}{}{}.{:02}",
+        sign,
+        symbol,
+        group_thousands(abs / 100),
+        abs % 100
+    )
+}
+
+/// Write a number with a comma between each group of three digits.
+fn group_thousands(n: u64) -> String {
+    let digits: Vec<char> = n.to_string().chars().collect();
+
+    // the groups are counted from the end: the first one can be shorter
+    digits
+        .rchunks(3)
+        .rev()
+        .map(|group| group.iter().collect::<String>())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Convert an amount of cents using an exchange rate, rounding to the nearest
@@ -216,7 +240,7 @@ mod tests {
         assert_eq!(format_money("$", 5), "$0.05");
         assert_eq!(format_money("$", 50), "$0.50");
         assert_eq!(format_money("€", 1234), "€12.34");
-        assert_eq!(format_money("¥", 100_000_000), "¥1000000.00");
+        assert_eq!(format_money("¥", 100_000_000), "¥1,000,000.00");
     }
 
     #[test]
@@ -227,16 +251,63 @@ mod tests {
 
     #[test]
     fn format_extremes_do_not_overflow() {
-        assert_eq!(format_money("$", i64::MAX), "$92233720368547758.07");
-        assert_eq!(format_money("$", i64::MIN), "-$92233720368547758.08");
+        assert_eq!(format_money("$", i64::MAX), "$92,233,720,368,547,758.07");
+        assert_eq!(format_money("$", i64::MIN), "-$92,233,720,368,547,758.08");
     }
 
     #[test]
-    fn format_round_trips_through_parse() {
-        for cents in [0, 1, 99, 100, 101, 123_456, -1, -100, -123_456] {
-            let formatted = format_money("", cents);
+    fn format_groups_thousands() {
+        for (cents, expected) in [
+            (0, "$0.00"),
+            (99, "$0.99"),
+            (99_999, "$999.99"),
+            (100_000, "$1,000.00"),
+            (100_001, "$1,000.01"),
+            (123_456, "$1,234.56"),
+            (9_999_999, "$99,999.99"),
+            (10_000_000, "$100,000.00"),
+            (99_999_999, "$999,999.99"),
+            (100_000_000, "$1,000,000.00"),
+            (123_456_789, "$1,234,567.89"),
+            (100_000_000_000, "$1,000,000,000.00"),
+        ] {
+            assert_eq!(format_money("$", cents), expected, "{}", cents);
+        }
+    }
+
+    #[test]
+    fn format_groups_thousands_of_negative_amounts() {
+        assert_eq!(format_money("$", -99_999), "-$999.99");
+        assert_eq!(format_money("$", -100_000), "-$1,000.00");
+        assert_eq!(format_money("€", -123_456_789), "-€1,234,567.89");
+    }
+
+    #[test]
+    fn format_never_puts_a_separator_in_the_cents_or_before_the_symbol() {
+        let formatted = format_money("£", 123_456_789);
+
+        assert!(formatted.starts_with('£'), "{}", formatted);
+        assert!(formatted.ends_with(".89"), "{}", formatted);
+        assert_eq!(formatted.matches(',').count(), 2, "{}", formatted);
+    }
+
+    #[test]
+    fn format_round_trips_through_parse_without_the_separators() {
+        for cents in
+            [0, 1, 99, 100, 101, 123_456, 123_456_789, -1, -100, -123_456]
+        {
+            // the parser is strict about not accepting separators
+            let formatted = format_money("", cents).replace(',', "");
             assert_eq!(parse_amount(&formatted), Ok(cents), "{}", formatted);
         }
+    }
+
+    #[test]
+    fn the_separators_that_are_shown_are_not_accepted_back() {
+        let shown = format_money("", 123_456);
+
+        assert_eq!(shown, "1,234.56");
+        assert_eq!(parse_amount(&shown), Err(ParseAmountError::Invalid));
     }
 
     #[test]

@@ -47,6 +47,12 @@ pub fn max_balance(start: i64, transactions: &[i64]) -> Option<i64> {
     running_balances(start, transactions)?.into_iter().max()
 }
 
+/// The balance of the account after the last transaction (the starting
+/// balance if there aren't any), or `None` if the running total overflows.
+pub fn final_balance(start: i64, transactions: &[i64]) -> Option<i64> {
+    running_balances(start, transactions)?.last().copied()
+}
+
 /// The account activity as a table: the balance at the start and after each
 /// transaction, with the balances that are the maximum marked. `None` if the
 /// running total overflows.
@@ -201,8 +207,10 @@ fn prompt_amounts(
 /// Show the result. Anything that goes wrong is reported on `err` and results
 /// in a failure exit code.
 ///
-/// If `verbose` the balance after each transaction and the exchange rate that
-/// was used are shown as well. The exchange rate (the value of one unit of the
+/// The final balance (to check against the statement) and the maximum are
+/// shown in the currency of the account, and the maximum in USD. If `verbose`
+/// the balance after each transaction and the exchange rate that was used are
+/// shown as well. The exchange rate (the value of one unit of the
 /// currency in USD) is only looked up once we have something to convert.
 pub fn report(
     currency: &config::Currency,
@@ -234,6 +242,7 @@ fn write_report(
     const TOO_LARGE: &str = "the account balance is too large to calculate";
 
     let max = max_balance(start, transactions).ok_or(TOO_LARGE)?;
+    let last = final_balance(start, transactions).ok_or(TOO_LARGE)?;
 
     writeln!(out)?;
 
@@ -243,6 +252,14 @@ fn write_report(
         writeln!(out, "{}", trail)?;
     }
 
+    // so that it can be compared with the statement that the transactions
+    // came from to make sure that they were all entered correctly
+    writeln!(
+        out,
+        "Final balance in {}: {}",
+        currency.code,
+        money::format_money(currency.symbol, last)
+    )?;
     writeln!(
         out,
         "Maximum value in {}: {}",
@@ -392,13 +409,17 @@ mod tests {
     }
 
     #[test]
-    fn the_report_shows_the_maximum_in_the_currency_and_in_usd() {
-        // 8.20, 8.10, 28.09 and 1 EUR is 2 USD
-        let (out, err, exit) = run_report("EUR", 820, &[-10, 1999], Ok(2.0));
+    fn the_report_shows_the_final_balance_and_the_maximum() {
+        // 8.20, 8.10, 28.09 and then 23.09: the maximum isn't the final
+        // balance. 1 EUR is 2 USD
+        let (out, err, exit) =
+            run_report("EUR", 820, &[-10, 1999, -500], Ok(2.0));
 
         assert_eq!(
             out,
-            "\nMaximum value in EUR: €28.09\nMaximum value in USD: $56.18\n"
+            "\nFinal balance in EUR: €23.09\n\
+             Maximum value in EUR: €28.09\n\
+             Maximum value in USD: $56.18\n"
         );
         assert_eq!(err, "");
         assert_eq!(exit, ExitCode::SUCCESS);
@@ -406,11 +427,13 @@ mod tests {
 
     #[test]
     fn the_report_for_usd_shows_the_same_value_twice() {
-        let (out, err, exit) = run_report("USD", 1000, &[500], Ok(1.0));
+        let (out, err, exit) = run_report("USD", 1000, &[500, -250], Ok(1.0));
 
         assert_eq!(
             out,
-            "\nMaximum value in USD: $15.00\nMaximum value in USD: $15.00\n"
+            "\nFinal balance in USD: $12.50\n\
+             Maximum value in USD: $15.00\n\
+             Maximum value in USD: $15.00\n"
         );
         assert_eq!(err, "");
         assert_eq!(exit, ExitCode::SUCCESS);
@@ -429,22 +452,27 @@ mod tests {
 
         assert_eq!(
             out,
-            "\nMaximum value in JPY: -¥5.00\nMaximum value in USD: -$2.50\n"
+            "\nFinal balance in JPY: -¥6.00\n\
+             Maximum value in JPY: -¥5.00\n\
+             Maximum value in USD: -$2.50\n"
         );
         assert_eq!(err, "");
         assert_eq!(exit, ExitCode::SUCCESS);
     }
 
     #[test]
-    fn the_maximum_is_still_shown_if_the_rate_cant_be_found() {
+    fn the_balances_are_still_shown_if_the_rate_cant_be_found() {
         let (out, err, exit) = run_report(
             "EUR",
             820,
-            &[-10, 1999],
+            &[-10, 1999, -500],
             Err(exchange::RateError::MissingApiKey),
         );
 
-        assert_eq!(out, "\nMaximum value in EUR: €28.09\n");
+        assert_eq!(
+            out,
+            "\nFinal balance in EUR: €23.09\nMaximum value in EUR: €28.09\n"
+        );
         assert_eq!(
             err,
             "error: no API key is configured, run `fbarcalc config` to set \
@@ -631,8 +659,8 @@ mod tests {
             .map(|l| l.trim_end_matches("  <- maximum").chars().count())
             .collect();
         assert!(widths.windows(2).all(|w| w[0] == w[1]), "{:?}", widths);
-        assert!(trail.contains("¥1000000000.00"), "{}", trail);
-        assert!(trail.contains("¥1001234567.84  <- maximum"), "{}", trail);
+        assert!(trail.contains("¥1,000,000,000.00"), "{}", trail);
+        assert!(trail.contains("¥1,001,234,567.84  <- maximum"), "{}", trail);
     }
 
     #[test]
@@ -680,7 +708,7 @@ mod tests {
     fn the_verbose_report_shows_the_trail_and_the_rate_used() {
         // 28.09 EUR is 35.11 USD at 1 EUR = 1.25 USD
         let (out, err, exit) =
-            run_verbose_report("EUR", 820, &[-10, 1999], Ok(1.25));
+            run_verbose_report("EUR", 820, &[-10, 1999, -500], Ok(1.25));
 
         let expected = [
             "",
@@ -688,7 +716,9 @@ mod tests {
             "0        start    €8.20",
             "1       -€0.10    €8.10",
             "2       €19.99   €28.09  <- maximum",
+            "3       -€5.00   €23.09",
             "",
+            "Final balance in EUR: €23.09",
             "Maximum value in EUR: €28.09",
             "Exchange rate: 1 EUR = 1.25 USD",
             "Maximum value in USD: $35.11",
@@ -711,6 +741,7 @@ mod tests {
             "0        start   $10.00",
             "1        $5.00   $15.00  <- maximum",
             "",
+            "Final balance in USD: $15.00",
             "Maximum value in USD: $15.00",
             "Maximum value in USD: $15.00",
         ]
@@ -740,7 +771,7 @@ mod tests {
         let (out, err, exit) = run_verbose_report(
             "EUR",
             820,
-            &[-10, 1999],
+            &[-10, 1999, -500],
             Err(exchange::RateError::MissingApiKey),
         );
 
@@ -750,7 +781,9 @@ mod tests {
             "0        start    €8.20",
             "1       -€0.10    €8.10",
             "2       €19.99   €28.09  <- maximum",
+            "3       -€5.00   €23.09",
             "",
+            "Final balance in EUR: €23.09",
             "Maximum value in EUR: €28.09",
         ]
         .join("\n")
@@ -797,12 +830,105 @@ mod tests {
 
             let summary = |s: &str| -> Vec<String> {
                 s.lines()
-                    .filter(|l| l.starts_with("Maximum value"))
+                    .filter(|l| {
+                        l.starts_with("Final balance")
+                            || l.starts_with("Maximum value")
+                    })
                     .map(String::from)
                     .collect()
             };
             assert_eq!(summary(&plain), summary(&verbose), "{}", code);
             assert!(verbose.len() > plain.len(), "{}", code);
         }
+    }
+
+    // final balance
+
+    #[test]
+    fn the_final_balance_is_the_balance_after_the_last_transaction() {
+        assert_eq!(final_balance(500, &[100, -300, 50]), Some(350));
+        assert_eq!(final_balance(-5, &[10]), Some(5));
+        assert_eq!(final_balance(100, &[500, -600]), Some(0));
+        assert_eq!(final_balance(100, &[-500]), Some(-400));
+    }
+
+    #[test]
+    fn the_final_balance_without_transactions_is_the_start() {
+        assert_eq!(final_balance(500, &[]), Some(500));
+        assert_eq!(final_balance(-500, &[]), Some(-500));
+    }
+
+    #[test]
+    fn the_final_balance_is_not_the_maximum() {
+        assert_eq!(final_balance(0, &[5000, -5000]), Some(0));
+        assert_eq!(max_balance(0, &[5000, -5000]), Some(5000));
+    }
+
+    #[test]
+    fn the_final_balance_reports_overflow() {
+        assert_eq!(final_balance(i64::MAX, &[1]), None);
+        assert_eq!(final_balance(i64::MAX, &[-1, 1]), Some(i64::MAX));
+    }
+
+    #[test]
+    fn the_final_balance_is_the_last_row_of_the_audit_trail() {
+        let trail = audit_trail("$", 1000, &[250, -1750, 99]).unwrap();
+        let last_row = trail.lines().last().unwrap();
+
+        assert_eq!(final_balance(1000, &[250, -1750, 99]), Some(-401));
+        assert!(last_row.ends_with("-$4.01"), "{}", last_row);
+    }
+
+    #[test]
+    fn the_report_shows_the_final_balance_before_the_maximum() {
+        let (out, _, _) = run_report("GBP", 500, &[], Ok(2.0));
+
+        // with nothing to add up it's the starting balance
+        assert_eq!(
+            out,
+            "\nFinal balance in GBP: £5.00\n\
+             Maximum value in GBP: £5.00\n\
+             Maximum value in USD: $10.00\n"
+        );
+    }
+
+    #[test]
+    fn the_report_shows_thousands_separators() {
+        // 1,234,567.89 and then 1,235,567.89 and then -764,432.11
+        let (out, err, exit) =
+            run_report("EUR", 123_456_789, &[100_000, -200_000_000], Ok(1.0));
+
+        assert_eq!(
+            out,
+            "\nFinal balance in EUR: -€764,432.11\n\
+             Maximum value in EUR: €1,235,567.89\n\
+             Maximum value in USD: $1,235,567.89\n"
+        );
+        assert_eq!(err, "");
+        assert_eq!(exit, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn the_audit_trail_shows_thousands_separators() {
+        let expected = [
+            "#  Transaction    Balance",
+            "0        start  €1,500.00",
+            "1      €320.75  €1,820.75",
+            "2   -€1,200.00    €620.75",
+            "3       €80.10    €700.85",
+            "4    €2,000.00  €2,700.85  <- maximum",
+            "5     -€450.00  €2,250.85",
+        ]
+        .join("\n")
+            + "\n";
+
+        assert_eq!(
+            audit_trail(
+                "€",
+                150_000,
+                &[32_075, -120_000, 8_010, 200_000, -45_000]
+            ),
+            Some(expected)
+        );
     }
 }
