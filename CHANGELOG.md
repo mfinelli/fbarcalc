@@ -2,6 +2,10 @@
 
 This document keeps track of major changes to the `fbarcalc` program.
 
+## 2026-10-15: v1.0.1
+
+Upgrade dependencies to resolve a packaging problem on Arch Linux.
+
 ## 2026-10-15: v1.0.0
 
 First stable release. Now published to [crates.io](https://crates.io) using
