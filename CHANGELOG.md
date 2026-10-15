@@ -2,6 +2,11 @@
 
 This document keeps track of major changes to the `fbarcalc` program.
 
+## 2026-10-15: v1.0.0
+
+First stable release. Now published to [crates.io](https://crates.io) using
+[trusted publishing](https://crates.io/docs/trusted-publishing).
+
 ## 2026-10-15: v0.3.0
 
 - Fix amounts being read one cent too low: floating point error turned values
