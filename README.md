@@ -10,9 +10,12 @@ current exchange rate) USD.
 - https://www.irs.gov/businesses/small-businesses-self-employed/report-of-foreign-bank-and-financial-accounts-fbar
 - https://bsaefiling.fincen.treas.gov/main.html
 
-**N.B.** While you may find this program useful I wrote it for my own personal
-use. I am not an accountant and am not liable for any outcome resulting from
-your usage of the program. You should be using your own, licensed CPA.
+> [!IMPORTANT]
+>
+> **N.B.** While you may find this program useful I wrote it for my own
+> personal use. I am not an accountant and am not liable for any outcome
+> resulting from your usage of the program. You should be using your own,
+> licensed CPA. See the LICENSE for details.
 
 ## usage
 
