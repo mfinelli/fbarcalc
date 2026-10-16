@@ -2,7 +2,7 @@
 
 This document keeps track of major changes to the `fbarcalc` program.
 
-## Unreleased
+## 2026-10-16: v1.1.0
 
 - Show the final balance after the last transaction, so that it can be
   compared with the statement that the transactions came from.
